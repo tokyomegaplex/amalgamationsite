@@ -1,0 +1,164 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Amalgamation</title>
+<style>
+  * {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+  }
+
+  body {
+    background: #0a0a0a;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    min-height: 100vh;
+    overflow: hidden;
+    font-family: 'Courier New', Courier, monospace;
+  }
+
+  .text-container {
+    display: flex;
+    position: relative;
+    user-select: none;
+  }
+
+  .letter-pair {
+    font-size: 5rem;
+    font-weight: 700;
+    color: #e0e0e0;
+    position: relative;
+    display: inline-block;
+    will-change: transform;
+    letter-spacing: 0.02em;
+    transition: none;
+  }
+</style>
+</head>
+<body>
+
+<div class="text-container" id="container"></div>
+
+<script>
+const word = "Amalgamation";
+const pairs = [];
+for (let i = 0; i < word.length; i += 2) {
+  pairs.push(word.slice(i, i + 2));
+}
+
+const container = document.getElementById("container");
+const elements = [];
+
+pairs.forEach((pair) => {
+  const span = document.createElement("span");
+  span.className = "letter-pair";
+  span.textContent = pair;
+  container.appendChild(span);
+  elements.push(span);
+});
+
+// Each pair has its own motion state
+const states = elements.map(() => ({
+  x: 0,
+  y: 0,
+  // current movement vector
+  vx: 0,
+  vy: 0,
+  // phase: 'moving' or 'paused'
+  phase: 'paused',
+  // time remaining in current phase (in ms)
+  phaseTimer: 0,
+  // speed multiplier for this drag gesture
+  speed: 0,
+  // accumulated noise offset
+  noisePhase: Math.random() * 1000,
+}));
+
+function randomRange(min, max) {
+  return min + Math.random() * (max - min);
+}
+
+function pickNewDrag(state) {
+  // Pick a random direction with a random speed
+  const angle = Math.random() * Math.PI * 2;
+  state.speed = randomRange(0.3, 1.2);
+  state.vx = Math.cos(angle) * state.speed;
+  state.vy = Math.sin(angle) * state.speed;
+  state.phase = 'moving';
+  state.phaseTimer = randomRange(400, 1800);
+}
+
+function startPause(state) {
+  state.phase = 'paused';
+  state.vx = 0;
+  state.vy = 0;
+  state.phaseTimer = randomRange(300, 1500);
+}
+
+// Simple noise function using sin combinations
+function noise(t) {
+  return Math.sin(t * 1.7) * 0.5
+       + Math.sin(t * 3.1 + 1.3) * 0.3
+       + Math.sin(t * 5.9 + 2.7) * 0.2;
+}
+
+// Max displacement from origin before biasing back
+const MAX_DRIFT = 60;
+
+// Stagger the initial start so pairs don't all begin in sync
+states.forEach((state, i) => {
+  state.phaseTimer = randomRange(100, 800) + i * 200;
+  state.phase = 'paused';
+});
+
+let lastTime = performance.now();
+
+function animate(now) {
+  const dt = Math.min(now - lastTime, 50); // cap delta
+  lastTime = now;
+
+  states.forEach((state, i) => {
+    state.phaseTimer -= dt;
+    state.noisePhase += dt * 0.003;
+
+    if (state.phaseTimer <= 0) {
+      if (state.phase === 'paused') {
+        pickNewDrag(state);
+      } else {
+        startPause(state);
+      }
+    }
+
+    if (state.phase === 'moving') {
+      // Add subtle noise perpendicular to the movement direction
+      const nx = noise(state.noisePhase) * 0.15;
+      const ny = noise(state.noisePhase + 50) * 0.15;
+
+      state.x += (state.vx + nx) * dt * 0.06;
+      state.y += (state.vy + ny) * dt * 0.06;
+
+      // Soft bias back toward origin to prevent drifting too far
+      const dist = Math.sqrt(state.x * state.x + state.y * state.y);
+      if (dist > MAX_DRIFT) {
+        const pull = (dist - MAX_DRIFT) * 0.002 * dt;
+        const pullAngle = Math.atan2(-state.y, -state.x);
+        state.x += Math.cos(pullAngle) * pull;
+        state.y += Math.sin(pullAngle) * pull;
+      }
+    }
+
+    elements[i].style.transform = `translate(${state.x.toFixed(2)}px, ${state.y.toFixed(2)}px)`;
+  });
+
+  requestAnimationFrame(animate);
+}
+
+requestAnimationFrame(animate);
+</script>
+
+</body>
+</html>
