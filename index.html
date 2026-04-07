@@ -907,6 +907,9 @@ function startMoveToFontOption() {
 // Recalc natural dims for ALL pairs — needed because a font change
 // on one element shifts siblings in the flex layout (flex-end).
 function recalcAllNaturalDims() {
+  // Save old base positions so we can compensate offsets
+  const oldBases = pairState.map(ps => ({ x: ps.baseCenterX, y: ps.baseCenterY }));
+
   // Temporarily reset ALL transforms to measure true natural positions
   elements.forEach((el, i) => {
     el.style.transform = 'translate(0px, 0px) scale(1, 1)';
@@ -918,6 +921,12 @@ function recalcAllNaturalDims() {
     pairState[i].naturalHH = r.height / 2;
     pairState[i].baseCenterX = r.left + r.width / 2;
     pairState[i].baseCenterY = r.top + r.height / 2;
+  });
+  // Adjust x/y offsets so each pair stays in the same screen position
+  // despite its base position shifting
+  pairState.forEach((ps, i) => {
+    ps.x += oldBases[i].x - ps.baseCenterX;
+    ps.y += oldBases[i].y - ps.baseCenterY;
   });
   // Restore all transforms
   elements.forEach((el, i) => {
