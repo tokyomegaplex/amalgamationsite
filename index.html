@@ -56,13 +56,14 @@
   /* Hide original text — pixelated canvas renders the visible version */
   .letter-pair { color: transparent !important; }
 
-  /* --- Fake cursor --- */
+  /* --- Fake cursor (hidden, rendered to canvas instead) --- */
   #cursor {
     position: fixed;
     top: 0; left: 0;
     pointer-events: none;
     z-index: 9999;
     will-change: transform;
+    display: none !important;
   }
   #cursor svg { display: none; }
   #cursor .arrow   { display: block; }
@@ -1079,8 +1080,6 @@ function animate(now) {
   }
 
   // --- RENDER ---
-  cursorEl.style.transform = `translate(${cursor.x.toFixed(1)}px, ${cursor.y.toFixed(1)}px)`;
-
   elements.forEach((el, i) => {
     const ps = pairState[i];
     el.style.transform = `translate(${ps.x.toFixed(2)}px, ${ps.y.toFixed(2)}px) rotate(${ps.rotation.toFixed(4)}rad) scale(${ps.scaleX.toFixed(4)}, ${ps.scaleY.toFixed(4)})`;
@@ -1097,66 +1096,155 @@ function animate(now) {
   requestAnimationFrame(animate);
 }
 
-// Pixelation: two-pass for hard no-AA jaggies
-// Pass 1: render text at very low res (tiny offscreen canvas)
-// Pass 2: blit to display canvas with nearest-neighbor upscale
+// Pixelation: render everything to a single low-res canvas.
+// CSS upscales it with image-rendering: pixelated. No intermediate
+// canvas = no chance for the browser to sneak in filtering.
 const pixelCanvas = document.getElementById('pixel-canvas');
-const pixCtx = pixelCanvas.getContext('2d');
-const PIXEL_SCALE = 0.75; // final display scale
-const RENDER_SCALE = 0.35; // render text at this scale first (low res to kill AA)
-
-// Offscreen tiny canvas for pass 1
-const offscreen = document.createElement('canvas');
-const offCtx = offscreen.getContext('2d');
+const pixCtx = pixelCanvas.getContext('2d', { alpha: true });
+const RENDER_SCALE = 0.55; // render at this fraction of screen res
 
 function setupPixelCanvas() {
-  pixelCanvas.width = Math.floor(window.innerWidth * PIXEL_SCALE);
-  pixelCanvas.height = Math.floor(window.innerHeight * PIXEL_SCALE);
+  pixelCanvas.width = Math.floor(window.innerWidth * RENDER_SCALE);
+  pixelCanvas.height = Math.floor(window.innerHeight * RENDER_SCALE);
   pixelCanvas.style.width = window.innerWidth + 'px';
   pixelCanvas.style.height = window.innerHeight + 'px';
   pixCtx.imageSmoothingEnabled = false;
-
-  offscreen.width = Math.floor(window.innerWidth * RENDER_SCALE);
-  offscreen.height = Math.floor(window.innerHeight * RENDER_SCALE);
-  offCtx.imageSmoothingEnabled = false;
 }
 setupPixelCanvas();
 window.addEventListener('resize', setupPixelCanvas);
 
-function renderPixelated() {
-  // Pass 1: render text at very low res
-  const ow = offscreen.width;
-  const oh = offscreen.height;
-  offCtx.clearRect(0, 0, ow, oh);
-  offCtx.save();
-  offCtx.scale(RENDER_SCALE, RENDER_SCALE);
+// Determine which cursor to draw based on phase/class
+function getCursorType() {
+  const phase = cursor.phase;
+  const action = cursor.actionType;
+  if (phase === 'grab' || phase === 'drag') return 'grabbing';
+  if (phase === 'hover' && action === 'fontChange') return 'ibeam';
+  if (phase === 'hover' || phase === 'release') return 'grab';
+  if (phase === 'rotateHover' || phase === 'rotateGrab' ||
+      phase === 'rotateDrag' || phase === 'rotateRelease') return 'rotate';
+  if (phase === 'handleHover' || phase === 'transformGrab' ||
+      phase === 'transformDrag' || phase === 'transformRelease') {
+    const h = cursor.selectedHandle;
+    return (h === 'tl' || h === 'br') ? 'nwse' : 'nesw';
+  }
+  return 'arrow';
+}
 
+function drawCursor(ctx, x, y, type) {
+  ctx.save();
+  ctx.translate(x, y);
+
+  ctx.fillStyle = '#fff';
+  ctx.strokeStyle = '#000';
+  ctx.lineWidth = 1.5 / RENDER_SCALE;
+
+  switch (type) {
+    case 'arrow':
+      ctx.beginPath();
+      ctx.moveTo(0, 0);
+      ctx.lineTo(18, 11);
+      ctx.lineTo(9, 12.5);
+      ctx.lineTo(4, 22);
+      ctx.closePath();
+      ctx.fill();
+      ctx.stroke();
+      break;
+
+    case 'grab':
+      // Open hand — simplified
+      ctx.fillRect(2, 10, 16, 12);
+      ctx.fillRect(3, 2, 4, 12);
+      ctx.fillRect(8, 0, 4, 14);
+      ctx.fillRect(13, 2, 4, 12);
+      ctx.fillRect(18, 5, 4, 9);
+      break;
+
+    case 'grabbing':
+      // Closed hand — simplified
+      ctx.fillRect(2, 10, 16, 14);
+      ctx.fillRect(3, 6, 4, 8);
+      ctx.fillRect(8, 5, 4, 9);
+      ctx.fillRect(13, 6, 4, 8);
+      ctx.fillRect(18, 7, 4, 7);
+      break;
+
+    case 'ibeam':
+      ctx.lineWidth = 2.5 / RENDER_SCALE;
+      ctx.strokeStyle = '#fff';
+      ctx.beginPath();
+      ctx.moveTo(6, 0); ctx.lineTo(18, 0);
+      ctx.moveTo(12, 0); ctx.lineTo(12, 24);
+      ctx.moveTo(6, 24); ctx.lineTo(18, 24);
+      ctx.stroke();
+      break;
+
+    case 'rotate':
+      ctx.lineWidth = 2.5 / RENDER_SCALE;
+      ctx.strokeStyle = '#fff';
+      ctx.beginPath();
+      ctx.arc(12, 12, 9, -0.5, Math.PI * 1.5, false);
+      ctx.stroke();
+      // Arrow tip
+      ctx.beginPath();
+      ctx.moveTo(3, 6); ctx.lineTo(3, 0); ctx.lineTo(9, 0);
+      ctx.stroke();
+      break;
+
+    case 'nwse':
+      ctx.lineWidth = 2.5 / RENDER_SCALE;
+      ctx.strokeStyle = '#fff';
+      ctx.beginPath();
+      ctx.moveTo(2, 2); ctx.lineTo(20, 20);
+      ctx.moveTo(2, 9); ctx.lineTo(2, 2); ctx.lineTo(9, 2);
+      ctx.moveTo(20, 13); ctx.lineTo(20, 20); ctx.lineTo(13, 20);
+      ctx.stroke();
+      break;
+
+    case 'nesw':
+      ctx.lineWidth = 2.5 / RENDER_SCALE;
+      ctx.strokeStyle = '#fff';
+      ctx.beginPath();
+      ctx.moveTo(20, 2); ctx.lineTo(2, 20);
+      ctx.moveTo(13, 2); ctx.lineTo(20, 2); ctx.lineTo(20, 9);
+      ctx.moveTo(9, 20); ctx.lineTo(2, 20); ctx.lineTo(2, 13);
+      ctx.stroke();
+      break;
+  }
+
+  ctx.restore();
+}
+
+function renderPixelated() {
+  const w = pixelCanvas.width;
+  const h = pixelCanvas.height;
+  pixCtx.clearRect(0, 0, w, h);
+  pixCtx.save();
+  pixCtx.scale(RENDER_SCALE, RENDER_SCALE);
+
+  // Draw text
   elements.forEach((el, i) => {
     const ps = pairState[i];
     const cx = ps.baseCenterX + ps.x;
     const cy = ps.baseCenterY + ps.y;
 
-    offCtx.save();
-    offCtx.translate(cx, cy);
-    offCtx.rotate(ps.rotation);
-    offCtx.scale(ps.scaleX, ps.scaleY);
+    pixCtx.save();
+    pixCtx.translate(cx, cy);
+    pixCtx.rotate(ps.rotation);
+    pixCtx.scale(ps.scaleX, ps.scaleY);
 
-    offCtx.font = `700 ${getComputedStyle(el).fontSize} ${pairFonts[i]}`;
-    offCtx.fillStyle = '#e0e0e0';
-    offCtx.textAlign = 'center';
-    offCtx.textBaseline = 'middle';
-    offCtx.fillText(el.textContent, 0, 0);
-    offCtx.restore();
+    pixCtx.font = `700 ${getComputedStyle(el).fontSize} ${pairFonts[i]}`;
+    pixCtx.fillStyle = '#e0e0e0';
+    pixCtx.textAlign = 'center';
+    pixCtx.textBaseline = 'middle';
+    pixCtx.fillText(el.textContent, 0, 0);
+    pixCtx.restore();
   });
 
-  offCtx.restore();
+  // Draw cursor
+  const cursorType = getCursorType();
+  drawCursor(pixCtx, cursor.x, cursor.y, cursorType);
 
-  // Pass 2: blit tiny canvas up to display canvas (nearest-neighbor)
-  const pw = pixelCanvas.width;
-  const ph = pixelCanvas.height;
-  pixCtx.clearRect(0, 0, pw, ph);
-  pixCtx.imageSmoothingEnabled = false;
-  pixCtx.drawImage(offscreen, 0, 0, pw, ph);
+  pixCtx.restore();
 }
 
 requestAnimationFrame(animate);
