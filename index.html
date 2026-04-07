@@ -18,7 +18,7 @@
     min-height: 100vh;
     overflow: hidden;
     font-family: 'Courier New', Courier, monospace;
-    cursor: none !important;
+    cursor: default;
   }
 
   .text-container {
@@ -37,7 +37,9 @@
     will-change: transform;
     letter-spacing: 0.02em;
     transform-origin: center center;
+    cursor: grab;
   }
+  .letter-pair:active { cursor: grabbing; }
 
   .letter-pair.grabbed { color: #ffffff; }
 
@@ -68,29 +70,50 @@
     display: none;
   }
   #transform-box.visible { display: block; }
+  #transform-box.user-active { pointer-events: auto; }
 
   #transform-box .border {
     position: absolute;
     inset: 0;
     border: 1.5px dashed rgba(120, 170, 255, 0.7);
+    pointer-events: none;
   }
 
   #transform-box .handle {
     position: absolute;
-    width: 8px;
-    height: 8px;
+    width: 12px;
+    height: 12px;
     background: #fff;
     border: 1.5px solid rgba(120, 170, 255, 0.9);
+    pointer-events: auto;
+    cursor: pointer;
   }
+  #transform-box .handle.tl, #transform-box .handle.br { cursor: nwse-resize; }
+  #transform-box .handle.tr, #transform-box .handle.bl { cursor: nesw-resize; }
+  #transform-box .handle.tc, #transform-box .handle.bc { cursor: ns-resize; }
+  #transform-box .handle.ml, #transform-box .handle.mr { cursor: ew-resize; }
+
+  /* Rotate zones — invisible areas just outside corners */
+  #transform-box .rotate-zone {
+    position: absolute;
+    width: 20px;
+    height: 20px;
+    pointer-events: auto;
+    cursor: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none'%3E%3Cpath d='M12 3a9 9 0 1 1-6.36 2.64' stroke='white' stroke-width='2' stroke-linecap='round'/%3E%3Cpolyline points='5.64,2 5.64,5.64 2,5.64' stroke='white' stroke-width='2' stroke-linecap='round' fill='none'/%3E%3C/svg%3E") 12 12, pointer;
+  }
+  #transform-box .rotate-zone.rtl { top: -20px; left: -20px; }
+  #transform-box .rotate-zone.rtr { top: -20px; right: -20px; }
+  #transform-box .rotate-zone.rbl { bottom: -20px; left: -20px; }
+  #transform-box .rotate-zone.rbr { bottom: -20px; right: -20px; }
   /* corners */
-  #transform-box .handle.tl { top: -4px; left: -4px; }
-  #transform-box .handle.tc { top: -4px; left: calc(50% - 4px); }
-  #transform-box .handle.tr { top: -4px; right: -4px; }
-  #transform-box .handle.ml { top: calc(50% - 4px); left: -4px; }
-  #transform-box .handle.mr { top: calc(50% - 4px); right: -4px; }
-  #transform-box .handle.bl { bottom: -4px; left: -4px; }
-  #transform-box .handle.bc { bottom: -4px; left: calc(50% - 4px); }
-  #transform-box .handle.br { bottom: -4px; right: -4px; }
+  #transform-box .handle.tl { top: -6px; left: -6px; }
+  #transform-box .handle.tc { top: -6px; left: calc(50% - 6px); }
+  #transform-box .handle.tr { top: -6px; right: -6px; }
+  #transform-box .handle.ml { top: calc(50% - 6px); left: -6px; }
+  #transform-box .handle.mr { top: calc(50% - 6px); right: -6px; }
+  #transform-box .handle.bl { bottom: -6px; left: -6px; }
+  #transform-box .handle.bc { bottom: -6px; left: calc(50% - 6px); }
+  #transform-box .handle.br { bottom: -6px; right: -6px; }
 
   /* Rotate cursor */
   #cursor.rotate .arrow { display: none; }
@@ -146,6 +169,10 @@
   <div class="handle bl"></div>
   <div class="handle bc"></div>
   <div class="handle br"></div>
+  <div class="rotate-zone rtl" data-corner="tl"></div>
+  <div class="rotate-zone rtr" data-corner="tr"></div>
+  <div class="rotate-zone rbl" data-corner="bl"></div>
+  <div class="rotate-zone rbr" data-corner="br"></div>
 </div>
 
 <!-- Fake cursor element -->
@@ -1196,8 +1223,12 @@ function animate(now) {
   });
 
   // Keep transform box in sync during drag/scale/rotate if visible
-  if (transformBox.classList.contains('visible') && cursor.targetPair >= 0) {
-    updateTransformBoxPosition(cursor.targetPair);
+  if (transformBox.classList.contains('visible')) {
+    if (user.selectedPair >= 0) {
+      updateTransformBoxPosition(user.selectedPair);
+    } else if (cursor.targetPair >= 0) {
+      updateTransformBoxPosition(cursor.targetPair);
+    }
   }
 
   requestAnimationFrame(animate);
@@ -1227,6 +1258,181 @@ function updateCursorClass() {
 }
 
 requestAnimationFrame(animate);
+
+// ==================== USER INTERACTION ====================
+const user = {
+  selectedPair: -1,
+  dragging: false,
+  mode: 'none', // 'move', 'scale', 'skew', 'rotate'
+  handle: '',
+  startX: 0, startY: 0,
+  startPairX: 0, startPairY: 0,
+  startScaleX: 1, startScaleY: 1,
+  startSkewX: 0, startSkewY: 0,
+  startRotation: 0,
+  startAngle: 0,
+  anchorX: 0, anchorY: 0,
+  signX: 1, signY: 1,
+};
+
+function userSelectPair(index) {
+  user.selectedPair = index;
+  transformBox.classList.add('visible', 'user-active');
+  updateTransformBoxPosition(index);
+}
+
+function userDeselectPair() {
+  user.selectedPair = -1;
+  transformBox.classList.remove('user-active');
+  // Only hide if the automated cursor isn't using it
+  if (!['moveToHandle','handleHover','transformGrab','transformDrag','transformRelease',
+        'moveToRotateHandle','rotateHover','rotateGrab','rotateDrag','rotateRelease',
+        'moveToSkewHandle','skewHover','skewGrab','skewDrag','skewRelease']
+      .includes(cursor.phase)) {
+    hideTransformBox();
+  }
+}
+
+// Click on letter pair to select + start drag
+elements.forEach((el, i) => {
+  el.addEventListener('mousedown', (e) => {
+    e.preventDefault();
+    userSelectPair(i);
+    user.dragging = true;
+    user.mode = 'move';
+    user.startX = e.clientX;
+    user.startY = e.clientY;
+    user.startPairX = pairState[i].x;
+    user.startPairY = pairState[i].y;
+  });
+});
+
+// Handle mousedown on transform box handles
+transformBox.querySelectorAll('.handle').forEach(handleEl => {
+  handleEl.addEventListener('mousedown', (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (user.selectedPair < 0) return;
+
+    const classes = handleEl.className.split(' ');
+    const handleName = classes.find(c => HANDLE_NAMES.includes(c));
+    if (!handleName) return;
+
+    user.handle = handleName;
+    user.startX = e.clientX;
+    user.startY = e.clientY;
+    user.dragging = true;
+
+    const ps = pairState[user.selectedPair];
+
+    if (CORNER_HANDLES.includes(handleName)) {
+      // Scale
+      user.mode = 'scale';
+      const anchorHandle = getAnchorHandle(handleName);
+      const box = getPairScreenBox(user.selectedPair);
+      const anchorPos = getHandlePosition(box, anchorHandle);
+      const handlePos = getHandlePosition(box, handleName);
+      user.anchorX = anchorPos.x;
+      user.anchorY = anchorPos.y;
+      user.signX = Math.sign(handlePos.x - anchorPos.x) || 1;
+      user.signY = Math.sign(handlePos.y - anchorPos.y) || 1;
+      user.startScaleX = ps.scaleX;
+      user.startScaleY = ps.scaleY;
+    } else {
+      // Edge handle = skew
+      user.mode = 'skew';
+      user.startSkewX = ps.skewX;
+      user.startSkewY = ps.skewY;
+    }
+  });
+});
+
+// Handle mousedown on rotate zones
+transformBox.querySelectorAll('.rotate-zone').forEach(zoneEl => {
+  zoneEl.addEventListener('mousedown', (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (user.selectedPair < 0) return;
+
+    user.dragging = true;
+    user.mode = 'rotate';
+    const center = getPairCenter(user.selectedPair);
+    user.startRotation = pairState[user.selectedPair].rotation;
+    user.startAngle = Math.atan2(e.clientY - center.y, e.clientX - center.x);
+  });
+});
+
+// Mousemove — handle all user drag modes
+document.addEventListener('mousemove', (e) => {
+  if (!user.dragging || user.selectedPair < 0) return;
+
+  const ps = pairState[user.selectedPair];
+
+  switch (user.mode) {
+    case 'move': {
+      const dx = e.clientX - user.startX;
+      const dy = e.clientY - user.startY;
+      ps.x = user.startPairX + dx;
+      ps.y = user.startPairY + dy;
+      break;
+    }
+    case 'scale': {
+      const rawSX = Math.abs(e.clientX - user.anchorX) / (2 * ps.naturalHW);
+      const rawSY = Math.abs(e.clientY - user.anchorY) / (2 * ps.naturalHH);
+      ps.scaleX = clamp(rawSX, 0.15, 4.0);
+      ps.scaleY = clamp(rawSY, 0.15, 4.0);
+      // Keep anchor pinned
+      const newCX = user.anchorX + user.signX * ps.naturalHW * ps.scaleX;
+      const newCY = user.anchorY + user.signY * ps.naturalHH * ps.scaleY;
+      ps.x = newCX - ps.baseCenterX;
+      ps.y = newCY - ps.baseCenterY;
+      break;
+    }
+    case 'skew': {
+      const h = user.handle;
+      if (h === 'tc' || h === 'bc') {
+        const dx = e.clientX - user.startX;
+        ps.skewX = clamp(user.startSkewX + dx / 120, -1.0, 1.0);
+      } else {
+        const dy = e.clientY - user.startY;
+        ps.skewY = clamp(user.startSkewY + dy / 120, -1.0, 1.0);
+      }
+      break;
+    }
+    case 'rotate': {
+      const center = getPairCenter(user.selectedPair);
+      const angle = Math.atan2(e.clientY - center.y, e.clientX - center.x);
+      ps.rotation = user.startRotation + (angle - user.startAngle);
+      break;
+    }
+  }
+
+  updateTransformBoxPosition(user.selectedPair);
+});
+
+// Mouseup — stop dragging
+document.addEventListener('mouseup', () => {
+  user.dragging = false;
+  user.mode = 'none';
+});
+
+// Click on background to deselect
+document.addEventListener('mousedown', (e) => {
+  // If click is not on a letter pair, handle, or rotate zone, deselect
+  if (user.selectedPair >= 0 && !user.dragging) {
+    const target = e.target;
+    const isInteractive = target.classList.contains('letter-pair') ||
+                          target.classList.contains('handle') ||
+                          target.classList.contains('rotate-zone');
+    if (!isInteractive) {
+      userDeselectPair();
+    }
+  }
+});
+
+// Keep user's transform box in sync each frame
+const origAnimate = animate;
+// (already handled in the main render loop via updateTransformBoxPosition)
 </script>
 </body>
 </html>
