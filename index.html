@@ -21,6 +21,15 @@
     cursor: none !important;
   }
 
+  /* Pixelation wrapper: scale down then back up with nearest-neighbor */
+  .pixel-wrapper {
+    image-rendering: pixelated;
+    image-rendering: -moz-crisp-edges;
+    image-rendering: crisp-edges;
+    -webkit-font-smoothing: none;
+    -moz-osx-font-smoothing: unset;
+  }
+
   .text-container {
     display: flex;
     align-items: flex-end;
@@ -37,9 +46,15 @@
     will-change: transform;
     letter-spacing: 0.02em;
     transform-origin: center center;
+    /* Kill anti-aliasing for jaggy edges */
+    -webkit-font-smoothing: none;
+    -moz-osx-font-smoothing: unset;
+    font-smooth: never;
   }
 
   .letter-pair.grabbed { color: #ffffff; }
+  /* Hide original text — pixelated canvas renders the visible version */
+  .letter-pair { color: transparent !important; }
 
   /* --- Fake cursor --- */
   #cursor {
@@ -92,6 +107,22 @@
   #transform-box .handle.bc { bottom: -4px; left: calc(50% - 4px); }
   #transform-box .handle.br { bottom: -4px; right: -4px; }
 
+  /* Rotate cursor */
+  #cursor.rotate .arrow { display: none; }
+  #cursor.rotate .rotate-icon { display: block; }
+
+  /* Pixelation canvas overlay */
+  #pixel-canvas {
+    position: fixed;
+    top: 0; left: 0;
+    width: 100vw;
+    height: 100vh;
+    image-rendering: pixelated;
+    image-rendering: -moz-crisp-edges;
+    pointer-events: none;
+    z-index: 5;
+  }
+
   /* --- Font dropdown --- */
   #font-dropdown {
     position: fixed;
@@ -126,6 +157,7 @@
 </head>
 <body>
 
+<canvas id="pixel-canvas"></canvas>
 <div class="text-container" id="container"></div>
 
 <!-- Font picker dropdown -->
@@ -186,6 +218,16 @@
       <line x1="9" y1="20" x2="15" y2="20"/>
     </g>
   </svg>
+  <!-- Rotate cursor -->
+  <svg class="rotate-icon" width="24" height="24" viewBox="0 0 24 24" fill="none">
+    <g stroke="#000" stroke-width="3.5" stroke-linecap="round" opacity="0.3">
+      <path d="M12 3a9 9 0 1 1-6.36 2.64"/>
+    </g>
+    <g stroke="#fff" stroke-width="2" stroke-linecap="round">
+      <path d="M12 3a9 9 0 1 1-6.36 2.64"/>
+      <polyline points="5.64,2 5.64,5.64 2,5.64"/>
+    </g>
+  </svg>
   <!-- Resize NWSE (top-left / bottom-right diagonal) -->
   <svg class="resize-nwse" width="24" height="24" viewBox="0 0 24 24" fill="none">
     <g stroke="#fff" stroke-width="2" stroke-linecap="round">
@@ -243,6 +285,7 @@ const pairState = elements.map((el) => {
   return {
     x: 0, y: 0,
     scaleX: 1, scaleY: 1,
+    rotation: 0, // radians
     naturalHW: r.width / 2,
     naturalHH: r.height / 2,
     baseCenterX: r.left + r.width / 2,
@@ -364,10 +407,13 @@ function getPairScreenBox(pairIndex) {
 
 function updateTransformBoxPosition(pairIndex) {
   const b = getPairScreenBox(pairIndex);
+  const ps = pairState[pairIndex];
   transformBox.style.left   = b.left + 'px';
   transformBox.style.top    = b.top + 'px';
   transformBox.style.width  = b.width + 'px';
   transformBox.style.height = b.height + 'px';
+  transformBox.style.transformOrigin = 'center center';
+  transformBox.style.transform = `rotate(${ps.rotation.toFixed(4)}rad)`;
 }
 
 function showTransformBox(pairIndex) {
@@ -472,6 +518,9 @@ const cursor = {
   signY: 1,
   // font-change specific
   selectedFontIndex: 0,
+  // rotate-specific
+  startRotation: 0,
+  startAngleToCenter: 0,
 };
 
 function pickNextTarget() {
@@ -499,9 +548,12 @@ function startIdle() {
 
 function startMoveToTarget() {
   cursor.targetPair = pickNextTarget();
-  // Decide action type: ~35% transform, ~40% drag, ~25% fontChange
+  // Decide action type: ~20% scale, ~15% rotate, ~40% drag, ~25% fontChange
   const roll = Math.random();
-  cursor.actionType = roll < 0.35 ? 'transform' : roll < 0.75 ? 'drag' : 'fontChange';
+  if (roll < 0.20) cursor.actionType = 'transform';
+  else if (roll < 0.35) cursor.actionType = 'rotate';
+  else if (roll < 0.75) cursor.actionType = 'drag';
+  else cursor.actionType = 'fontChange';
 
   let aimX, aimY;
   const center = getPairCenter(cursor.targetPair);
@@ -536,7 +588,7 @@ function startHover() {
     cursorEl.className = 'grab';
   }
 
-  if (cursor.actionType === 'transform') {
+  if (cursor.actionType === 'transform' || cursor.actionType === 'rotate') {
     showTransformBox(cursor.targetPair);
   }
 }
@@ -672,6 +724,93 @@ function startTransformRelease() {
   cursorEl.className = '';
 }
 
+// --- ROTATE PHASES ---
+
+function startMoveToRotateHandle() {
+  // Move to just outside a random corner (rotation hotspot)
+  cursor.selectedHandle = CORNER_HANDLES[Math.floor(Math.random() * CORNER_HANDLES.length)];
+  const boxRect = getPairScreenBox(cursor.targetPair);
+  const handlePos = getHandlePosition(boxRect, cursor.selectedHandle);
+  const center = getPairCenter(cursor.targetPair);
+  // Aim slightly outside the corner (where rotate cursor appears in Photoshop)
+  const dx = handlePos.x - center.x;
+  const dy = handlePos.y - center.y;
+  const len = Math.sqrt(dx * dx + dy * dy) || 1;
+  const aimX = handlePos.x + (dx / len) * 15 + randomRange(-3, 3);
+  const aimY = handlePos.y + (dy / len) * 15 + randomRange(-3, 3);
+  const dist = Math.sqrt((aimX - cursor.x) ** 2 + (aimY - cursor.y) ** 2);
+  cursor.path = generateMousePath(cursor.x, cursor.y, aimX, aimY, 40);
+  cursor.pathStartTime = performance.now();
+  cursor.pathDuration = getMoveDuration(dist);
+  cursor.phase = 'moveToRotateHandle';
+  cursorEl.className = '';
+}
+
+function startRotateHover() {
+  cursor.phase = 'rotateHover';
+  cursor.hoverTimer = randomRange(50, 150);
+  cursorEl.className = 'rotate';
+}
+
+function startRotateGrab() {
+  cursor.phase = 'rotateGrab';
+  cursor.hoverTimer = randomRange(30, 70);
+  const center = getPairCenter(cursor.targetPair);
+  cursor.startRotation = pairState[cursor.targetPair].rotation;
+  cursor.startAngleToCenter = Math.atan2(cursor.y - center.y, cursor.x - center.x);
+}
+
+function startRotateDrag() {
+  const ps = pairState[cursor.targetPair];
+  // Pick a target rotation delta: between -45 and +45 degrees
+  // Bias toward returning to 0 if already rotated a lot
+  let targetDelta;
+  const currentDeg = ps.rotation * 180 / Math.PI;
+  if (Math.abs(currentDeg) > 25) {
+    // Bias back toward 0
+    targetDelta = -ps.rotation * randomRange(0.3, 0.8);
+  } else {
+    targetDelta = randomRange(-0.7, 0.7); // ~±40 degrees in radians
+  }
+
+  // Compute where the cursor needs to go to achieve that rotation
+  // The cursor needs to arc around the center of the pair
+  const center = getPairCenter(cursor.targetPair);
+  const dx = cursor.x - center.x;
+  const dy = cursor.y - center.y;
+  const radius = Math.sqrt(dx * dx + dy * dy) || 50;
+  const currentAngle = Math.atan2(dy, dx);
+  const targetAngle = currentAngle + targetDelta;
+  const destX = center.x + Math.cos(targetAngle) * radius;
+  const destY = center.y + Math.sin(targetAngle) * radius;
+
+  // Generate an arc path (not a straight line)
+  const numPoints = 60;
+  const points = [];
+  const seed = Math.random() * 1000;
+  for (let i = 0; i <= numPoints; i++) {
+    const t = i / numPoints;
+    const eased = mouseEase(t);
+    const angle = lerp(currentAngle, targetAngle, eased);
+    const r = radius + handTremor(t * 10, seed) * 1.0;
+    points.push({
+      x: center.x + Math.cos(angle) * r,
+      y: center.y + Math.sin(angle) * r,
+    });
+  }
+
+  cursor.path = points;
+  cursor.pathStartTime = performance.now();
+  cursor.pathDuration = getDragDuration(Math.abs(targetDelta) * radius);
+  cursor.phase = 'rotateDrag';
+}
+
+function startRotateRelease() {
+  cursor.phase = 'rotateRelease';
+  cursor.hoverTimer = randomRange(80, 200);
+  cursorEl.className = 'rotate';
+}
+
 // --- FONT CHANGE PHASES ---
 
 function startFontClick() {
@@ -726,7 +865,7 @@ function recalcAllNaturalDims() {
   // Restore all transforms
   elements.forEach((el, i) => {
     const ps = pairState[i];
-    el.style.transform = `translate(${ps.x.toFixed(2)}px, ${ps.y.toFixed(2)}px) scale(${ps.scaleX.toFixed(4)}, ${ps.scaleY.toFixed(4)})`;
+    el.style.transform = `translate(${ps.x.toFixed(2)}px, ${ps.y.toFixed(2)}px) rotate(${ps.rotation.toFixed(4)}rad) scale(${ps.scaleX.toFixed(4)}, ${ps.scaleY.toFixed(4)})`;
   });
 }
 
@@ -778,6 +917,8 @@ function animate(now) {
       if (cursor.hoverTimer <= 0) {
         if (cursor.actionType === 'transform') {
           startMoveToHandle();
+        } else if (cursor.actionType === 'rotate') {
+          startMoveToRotateHandle();
         } else if (cursor.actionType === 'fontChange') {
           startFontClick();
         } else {
@@ -857,6 +998,42 @@ function animate(now) {
       if (cursor.hoverTimer <= 0) startIdle();
       break;
 
+    // --- ROTATE PATH ---
+    case 'moveToRotateHandle':
+      if (followPath(cursor, now) >= 1) startRotateHover();
+      break;
+
+    case 'rotateHover':
+      cursor.hoverTimer -= dt;
+      cursor.x += handTremor(now * 0.01, 33) * 0.1;
+      cursor.y += handTremor(now * 0.01, 77) * 0.1;
+      if (cursor.hoverTimer <= 0) startRotateGrab();
+      break;
+
+    case 'rotateGrab':
+      cursor.hoverTimer -= dt;
+      if (cursor.hoverTimer <= 0) startRotateDrag();
+      break;
+
+    case 'rotateDrag': {
+      const t = followPath(cursor, now);
+      const ps = pairState[cursor.targetPair];
+      const center = getPairCenter(cursor.targetPair);
+      const currentAngle = Math.atan2(cursor.y - center.y, cursor.x - center.x);
+      const angleDelta = currentAngle - cursor.startAngleToCenter;
+      ps.rotation = cursor.startRotation + angleDelta;
+      updateTransformBoxPosition(cursor.targetPair);
+      if (t >= 1) startRotateRelease();
+      break;
+    }
+
+    case 'rotateRelease':
+      cursor.hoverTimer -= dt;
+      cursor.x += handTremor(now * 0.01, 55) * 0.08;
+      cursor.y += handTremor(now * 0.01, 22) * 0.08;
+      if (cursor.hoverTimer <= 0) startIdle();
+      break;
+
     // --- FONT CHANGE PATH ---
     case 'fontClick':
       cursor.hoverTimer -= dt;
@@ -906,15 +1083,62 @@ function animate(now) {
 
   elements.forEach((el, i) => {
     const ps = pairState[i];
-    el.style.transform = `translate(${ps.x.toFixed(2)}px, ${ps.y.toFixed(2)}px) scale(${ps.scaleX.toFixed(4)}, ${ps.scaleY.toFixed(4)})`;
+    el.style.transform = `translate(${ps.x.toFixed(2)}px, ${ps.y.toFixed(2)}px) rotate(${ps.rotation.toFixed(4)}rad) scale(${ps.scaleX.toFixed(4)}, ${ps.scaleY.toFixed(4)})`;
   });
 
-  // Keep transform box in sync during drag/scale if visible
+  // Keep transform box in sync during drag/scale/rotate if visible
   if (transformBox.classList.contains('visible') && cursor.targetPair >= 0) {
     updateTransformBoxPosition(cursor.targetPair);
   }
 
+  // --- PIXELATION ---
+  renderPixelated();
+
   requestAnimationFrame(animate);
+}
+
+// Pixelation: render the DOM text into a low-res canvas, display upscaled
+const pixelCanvas = document.getElementById('pixel-canvas');
+const pixCtx = pixelCanvas.getContext('2d');
+const PIXEL_SCALE = 0.25; // render at 25% res = ~4x pixel size
+
+function setupPixelCanvas() {
+  pixelCanvas.width = Math.floor(window.innerWidth * PIXEL_SCALE);
+  pixelCanvas.height = Math.floor(window.innerHeight * PIXEL_SCALE);
+  pixelCanvas.style.width = window.innerWidth + 'px';
+  pixelCanvas.style.height = window.innerHeight + 'px';
+  pixCtx.imageSmoothingEnabled = false;
+}
+setupPixelCanvas();
+window.addEventListener('resize', setupPixelCanvas);
+
+function renderPixelated() {
+  const w = pixelCanvas.width;
+  const h = pixelCanvas.height;
+  pixCtx.clearRect(0, 0, w, h);
+  pixCtx.save();
+  pixCtx.scale(PIXEL_SCALE, PIXEL_SCALE);
+
+  elements.forEach((el, i) => {
+    const ps = pairState[i];
+    const cx = ps.baseCenterX + ps.x;
+    const cy = ps.baseCenterY + ps.y;
+
+    pixCtx.save();
+    pixCtx.translate(cx, cy);
+    pixCtx.rotate(ps.rotation);
+    pixCtx.scale(ps.scaleX, ps.scaleY);
+
+    // Use computed style for accurate font size (cached per pair in pairFonts)
+    pixCtx.font = `700 ${getComputedStyle(el).fontSize} ${pairFonts[i]}`;
+    pixCtx.fillStyle = '#e0e0e0';
+    pixCtx.textAlign = 'center';
+    pixCtx.textBaseline = 'middle';
+    pixCtx.fillText(el.textContent, 0, 0);
+    pixCtx.restore();
+  });
+
+  pixCtx.restore();
 }
 
 requestAnimationFrame(animate);
