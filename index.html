@@ -29,7 +29,7 @@
   }
 
   .letter-pair {
-    font-size: 5rem;
+    font-size: clamp(2rem, 6vw, 5rem);
     font-weight: 700;
     color: #e0e0e0;
     position: relative;
@@ -421,8 +421,11 @@ function buildDropdownOptions(excludeFont) {
 }
 
 function showFontDropdown(x, y) {
-  fontDropdown.style.left = x + 'px';
-  fontDropdown.style.top = y + 'px';
+  // Clamp so dropdown stays on screen
+  const maxX = window.innerWidth - 200;
+  const maxY = window.innerHeight - 250;
+  fontDropdown.style.left = Math.min(x, maxX) + 'px';
+  fontDropdown.style.top = Math.min(y, maxY) + 'px';
   fontDropdown.classList.add('visible');
 }
 
@@ -480,8 +483,8 @@ function pickNextTarget() {
 }
 
 function getPairCenter(i) {
-  const rect = elements[i].getBoundingClientRect();
-  return { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 };
+  const ps = pairState[i];
+  return { x: ps.baseCenterX + ps.x, y: ps.baseCenterY + ps.y };
 }
 
 // --- Phase transitions ---
@@ -593,13 +596,15 @@ function startTransformGrab() {
 }
 
 function startDrag() {
-  const dragDist = randomRange(20, 80);
+  const maxDrag = Math.min(window.innerWidth, window.innerHeight) * 0.12;
+  const dragDist = randomRange(10, maxDrag);
   const dragAngle = Math.random() * Math.PI * 2;
   const currentX = pairState[cursor.targetPair].x;
   const currentY = pairState[cursor.targetPair].y;
   const distFromOrigin = Math.sqrt(currentX ** 2 + currentY ** 2);
+  const maxDrift = Math.min(window.innerWidth, window.innerHeight) * 0.15;
   let biasAngle = dragAngle;
-  if (distFromOrigin > 30) {
+  if (distFromOrigin > maxDrift * 0.5) {
     const toOrigin = Math.atan2(-currentY, -currentX);
     biasAngle = lerp(dragAngle, toOrigin, 0.4 + Math.random() * 0.3);
   }
@@ -627,9 +632,9 @@ function startDrag() {
 }
 
 function biasedTargetScale(current) {
-  if (current > 1.4) return randomRange(0.65, 1.1);
-  if (current < 0.65) return randomRange(0.9, 1.5);
-  return randomRange(0.55, 1.7);
+  if (current > 1.3) return randomRange(0.7, 1.05);
+  if (current < 0.7) return randomRange(0.9, 1.3);
+  return randomRange(0.6, 1.4);
 }
 
 function startTransformDrag() {
@@ -703,19 +708,26 @@ function startMoveToFontOption() {
   cursorEl.className = '';
 }
 
-function recalcNaturalDims(pairIndex) {
-  const el = elements[pairIndex];
-  const ps = pairState[pairIndex];
-  // Temporarily reset to scale(1,1) with no translation to measure natural size + position
-  el.style.transform = 'translate(0px, 0px) scale(1, 1)';
-  // Force reflow
-  const r = el.getBoundingClientRect();
-  ps.naturalHW = r.width / 2;
-  ps.naturalHH = r.height / 2;
-  ps.baseCenterX = r.left + r.width / 2;
-  ps.baseCenterY = r.top + r.height / 2;
-  // Restore actual transform
-  el.style.transform = `translate(${ps.x.toFixed(2)}px, ${ps.y.toFixed(2)}px) scale(${ps.scaleX.toFixed(4)}, ${ps.scaleY.toFixed(4)})`;
+// Recalc natural dims for ALL pairs — needed because a font change
+// on one element shifts siblings in the flex layout (flex-end).
+function recalcAllNaturalDims() {
+  // Temporarily reset ALL transforms to measure true natural positions
+  elements.forEach((el, i) => {
+    el.style.transform = 'translate(0px, 0px) scale(1, 1)';
+  });
+  // Single forced reflow, then read all
+  elements.forEach((el, i) => {
+    const r = el.getBoundingClientRect();
+    pairState[i].naturalHW = r.width / 2;
+    pairState[i].naturalHH = r.height / 2;
+    pairState[i].baseCenterX = r.left + r.width / 2;
+    pairState[i].baseCenterY = r.top + r.height / 2;
+  });
+  // Restore all transforms
+  elements.forEach((el, i) => {
+    const ps = pairState[i];
+    el.style.transform = `translate(${ps.x.toFixed(2)}px, ${ps.y.toFixed(2)}px) scale(${ps.scaleX.toFixed(4)}, ${ps.scaleY.toFixed(4)})`;
+  });
 }
 
 function startFontOptionClick() {
@@ -726,9 +738,8 @@ function startFontOptionClick() {
   const newFontCss = optionEl.dataset.fontCss;
   pairFonts[cursor.targetPair] = newFontCss;
   elements[cursor.targetPair].style.fontFamily = newFontCss;
-  // Recalculate natural dimensions + base position since font changed
-  // (font change affects element size AND position due to flex-end alignment)
-  recalcNaturalDims(cursor.targetPair);
+  // Recalculate ALL pairs — font change shifts flex layout for everyone
+  recalcAllNaturalDims();
 }
 
 function startFontDismiss() {
@@ -738,6 +749,9 @@ function startFontDismiss() {
   elements[cursor.targetPair].classList.remove('grabbed');
   cursorEl.className = '';
 }
+
+// Recalc on resize (orientation change, etc.)
+window.addEventListener('resize', () => recalcAllNaturalDims());
 
 // ==================== ANIMATION LOOP ====================
 let lastTime = performance.now();
@@ -820,8 +834,8 @@ function animate(now) {
       // (distance from anchor to cursor spans the full scaled width)
       const rawSX = Math.abs(cursor.x - cursor.anchorX) / (2 * ps.naturalHW);
       const rawSY = Math.abs(cursor.y - cursor.anchorY) / (2 * ps.naturalHH);
-      ps.scaleX = clamp(rawSX, 0.25, 3.0);
-      ps.scaleY = clamp(rawSY, 0.25, 3.0);
+      ps.scaleX = clamp(rawSX, 0.35, 2.0);
+      ps.scaleY = clamp(rawSY, 0.35, 2.0);
 
       // Keep anchor corner pinned: adjust translation so anchor stays fixed.
       // anchor = center - signX * naturalHW * scaleX  (for X axis)
