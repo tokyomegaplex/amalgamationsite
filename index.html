@@ -182,8 +182,19 @@ pairStrings.forEach((pair) => {
   elements.push(span);
 });
 
-// Per-pair state: offset + scale
-const pairState = elements.map(() => ({ x: 0, y: 0, scale: 1 }));
+// Per-pair state: offset + independent x/y scale + natural dims
+// baseCenterX/Y = screen center when tx=ty=0, scaleX=scaleY=1
+const pairState = elements.map((el) => {
+  const r = el.getBoundingClientRect();
+  return {
+    x: 0, y: 0,
+    scaleX: 1, scaleY: 1,
+    naturalHW: r.width / 2,
+    naturalHH: r.height / 2,
+    baseCenterX: r.left + r.width / 2,
+    baseCenterY: r.top + r.height / 2,
+  };
+});
 
 // ==================== UTILS ====================
 function randomRange(min, max) {
@@ -288,19 +299,21 @@ function getAnchorHandle(handle) {
   return map[handle];
 }
 
-function updateTransformBoxPosition(pairIndex) {
-  const el = elements[pairIndex];
+function getPairScreenBox(pairIndex) {
   const ps = pairState[pairIndex];
-  // Get the element's base rect (before our transform)
-  // We need to compute where the scaled element visually is
-  const baseRect = el.getBoundingClientRect();
-  // getBoundingClientRect already includes the CSS transform,
-  // so we can use it directly
-  const pad = 8;
-  transformBox.style.left   = (baseRect.left - pad) + 'px';
-  transformBox.style.top    = (baseRect.top - pad) + 'px';
-  transformBox.style.width  = (baseRect.width + pad * 2) + 'px';
-  transformBox.style.height = (baseRect.height + pad * 2) + 'px';
+  const cx = ps.baseCenterX + ps.x;
+  const cy = ps.baseCenterY + ps.y;
+  const hw = ps.naturalHW * ps.scaleX;
+  const hh = ps.naturalHH * ps.scaleY;
+  return { left: cx - hw, top: cy - hh, width: hw * 2, height: hh * 2 };
+}
+
+function updateTransformBoxPosition(pairIndex) {
+  const b = getPairScreenBox(pairIndex);
+  transformBox.style.left   = b.left + 'px';
+  transformBox.style.top    = b.top + 'px';
+  transformBox.style.width  = b.width + 'px';
+  transformBox.style.height = b.height + 'px';
 }
 
 function showTransformBox(pairIndex) {
@@ -332,8 +345,13 @@ const cursor = {
   selectedHandle: 'br',
   anchorX: 0,
   anchorY: 0,
-  startScale: 1,
-  startDist: 1,
+  startScaleX: 1,
+  startScaleY: 1,
+  startHandleX: 0,
+  startHandleY: 0,
+  // sign of (handle - anchor) per axis at drag start
+  signX: 1,
+  signY: 1,
 };
 
 function pickNextTarget() {
@@ -347,11 +365,6 @@ function pickNextTarget() {
 function getPairCenter(i) {
   const rect = elements[i].getBoundingClientRect();
   return { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 };
-}
-
-function getPairRect(i) {
-  const r = elements[i].getBoundingClientRect();
-  return { left: r.left, top: r.top, width: r.width, height: r.height };
 }
 
 // --- Phase transitions ---
@@ -402,7 +415,7 @@ function startHover() {
 function startMoveToHandle() {
   // Pick a corner handle
   cursor.selectedHandle = CORNER_HANDLES[Math.floor(Math.random() * CORNER_HANDLES.length)];
-  const boxRect = transformBox.getBoundingClientRect();
+  const boxRect = getPairScreenBox(cursor.targetPair);
   const handlePos = getHandlePosition(boxRect, cursor.selectedHandle);
   const aimX = handlePos.x + randomRange(-2, 2);
   const aimY = handlePos.y + randomRange(-2, 2);
@@ -436,16 +449,21 @@ function startGrab() {
 function startTransformGrab() {
   cursor.phase = 'transformGrab';
   cursor.hoverTimer = randomRange(30, 70);
-  // Keep resize cursor during grab
+
   const anchorHandle = getAnchorHandle(cursor.selectedHandle);
-  const boxRect = transformBox.getBoundingClientRect();
-  const anchorPos = getHandlePosition(boxRect, anchorHandle);
+  const box = getPairScreenBox(cursor.targetPair);
+  const anchorPos = getHandlePosition(box, anchorHandle);
+  const handlePos = getHandlePosition(box, cursor.selectedHandle);
+
   cursor.anchorX = anchorPos.x;
   cursor.anchorY = anchorPos.y;
-  cursor.startScale = pairState[cursor.targetPair].scale;
-  cursor.startDist = Math.sqrt(
-    (cursor.x - cursor.anchorX) ** 2 + (cursor.y - cursor.anchorY) ** 2
-  ) || 1;
+  cursor.startHandleX = handlePos.x;
+  cursor.startHandleY = handlePos.y;
+  cursor.startScaleX = pairState[cursor.targetPair].scaleX;
+  cursor.startScaleY = pairState[cursor.targetPair].scaleY;
+  // record which direction handle is relative to anchor
+  cursor.signX = Math.sign(handlePos.x - anchorPos.x) || 1;
+  cursor.signY = Math.sign(handlePos.y - anchorPos.y) || 1;
 }
 
 function startDrag() {
@@ -482,30 +500,24 @@ function startDrag() {
   cursor.dragStartPairY = pairState[cursor.targetPair].y;
 }
 
-function startTransformDrag() {
-  // Drag the handle to scale. Pick a target scale.
-  const ps = pairState[cursor.targetPair];
-  // Bias toward returning to scale 1 if already scaled a lot
-  let targetScale;
-  if (ps.scale > 1.3) {
-    targetScale = randomRange(0.7, 1.1);
-  } else if (ps.scale < 0.7) {
-    targetScale = randomRange(0.9, 1.4);
-  } else {
-    targetScale = randomRange(0.6, 1.6);
-  }
-  const scaleRatio = targetScale / cursor.startScale;
-  // The handle needs to move to a position that's scaleRatio * startDist from anchor
-  const targetDist = cursor.startDist * scaleRatio;
-  const dx = cursor.x - cursor.anchorX;
-  const dy = cursor.y - cursor.anchorY;
-  const currentDist = Math.sqrt(dx * dx + dy * dy) || 1;
-  const dirX = dx / currentDist;
-  const dirY = dy / currentDist;
-  const destX = cursor.anchorX + dirX * targetDist;
-  const destY = cursor.anchorY + dirY * targetDist;
-  const moveDist = Math.sqrt((destX - cursor.x) ** 2 + (destY - cursor.y) ** 2);
+function biasedTargetScale(current) {
+  if (current > 1.4) return randomRange(0.65, 1.1);
+  if (current < 0.65) return randomRange(0.9, 1.5);
+  return randomRange(0.55, 1.7);
+}
 
+function startTransformDrag() {
+  const ps = pairState[cursor.targetPair];
+  // Pick independent target scales for X and Y
+  const targetSX = biasedTargetScale(ps.scaleX);
+  const targetSY = biasedTargetScale(ps.scaleY);
+
+  // Where should the handle end up given those target scales?
+  // handle_x = anchor_x + signX * 2 * naturalHW * targetSX
+  const destX = cursor.anchorX + cursor.signX * 2 * ps.naturalHW * targetSX;
+  const destY = cursor.anchorY + cursor.signY * 2 * ps.naturalHH * targetSY;
+
+  const moveDist = Math.sqrt((destX - cursor.x) ** 2 + (destY - cursor.y) ** 2);
   cursor.path = generateMousePath(cursor.x, cursor.y, destX, destY, 60);
   cursor.pathStartTime = performance.now();
   cursor.pathDuration = getDragDuration(moveDist);
@@ -602,13 +614,23 @@ function animate(now) {
 
     case 'transformDrag': {
       const t = followPath(cursor, now);
-      // Compute new scale based on distance from anchor
-      const dx = cursor.x - cursor.anchorX;
-      const dy = cursor.y - cursor.anchorY;
-      const currentDist = Math.sqrt(dx * dx + dy * dy) || 1;
-      const scaleRatio = currentDist / cursor.startDist;
-      pairState[cursor.targetPair].scale = clamp(cursor.startScale * scaleRatio, 0.3, 2.5);
-      // Update the transform box to track the scaled element
+      const ps = pairState[cursor.targetPair];
+
+      // newScaleX = |cursor.x - anchorX| / (2 * naturalHW)
+      // (distance from anchor to cursor spans the full scaled width)
+      const rawSX = Math.abs(cursor.x - cursor.anchorX) / (2 * ps.naturalHW);
+      const rawSY = Math.abs(cursor.y - cursor.anchorY) / (2 * ps.naturalHH);
+      ps.scaleX = clamp(rawSX, 0.25, 3.0);
+      ps.scaleY = clamp(rawSY, 0.25, 3.0);
+
+      // Keep anchor corner pinned: adjust translation so anchor stays fixed.
+      // anchor = center - signX * naturalHW * scaleX  (for X axis)
+      // => center = anchor + signX * naturalHW * scaleX
+      const newCenterX = cursor.anchorX + cursor.signX * ps.naturalHW * ps.scaleX;
+      const newCenterY = cursor.anchorY + cursor.signY * ps.naturalHH * ps.scaleY;
+      ps.x = newCenterX - ps.baseCenterX;
+      ps.y = newCenterY - ps.baseCenterY;
+
       updateTransformBoxPosition(cursor.targetPair);
       if (t >= 1) startTransformRelease();
       break;
@@ -627,7 +649,7 @@ function animate(now) {
 
   elements.forEach((el, i) => {
     const ps = pairState[i];
-    el.style.transform = `translate(${ps.x.toFixed(2)}px, ${ps.y.toFixed(2)}px) scale(${ps.scale.toFixed(4)})`;
+    el.style.transform = `translate(${ps.x.toFixed(2)}px, ${ps.y.toFixed(2)}px) scale(${ps.scaleX.toFixed(4)}, ${ps.scaleY.toFixed(4)})`;
   });
 
   // Keep transform box in sync during drag/scale if visible
