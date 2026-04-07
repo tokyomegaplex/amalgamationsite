@@ -258,6 +258,7 @@ const pairState = elements.map((el) => {
     x: 0, y: 0,
     scaleX: 1, scaleY: 1,
     rotation: 0, // radians
+    skewX: 0, skewY: 0, // radians
     naturalHW: r.width / 2,
     naturalHH: r.height / 2,
     baseCenterX: r.left + r.width / 2,
@@ -493,6 +494,10 @@ const cursor = {
   // rotate-specific
   startRotation: 0,
   startAngleToCenter: 0,
+  // skew-specific
+  startSkewX: 0,
+  startSkewY: 0,
+  skewAxis: 'x', // 'x' or 'y'
 };
 
 function pickNextTarget() {
@@ -520,12 +525,15 @@ function startIdle() {
 
 function startMoveToTarget() {
   cursor.targetPair = pickNextTarget();
-  // Decide action type: ~20% scale, ~15% rotate, ~40% drag, ~25% fontChange
+  // Action type distribution:
+  // drag: 40% | transform(scale): 20% | rotate: 15% | fontChange: 10% | skew: 10% | extra drag: 5%
   const roll = Math.random();
-  if (roll < 0.20) cursor.actionType = 'transform';
-  else if (roll < 0.35) cursor.actionType = 'rotate';
-  else if (roll < 0.75) cursor.actionType = 'drag';
-  else cursor.actionType = 'fontChange';
+  if      (roll < 0.40) cursor.actionType = 'drag';
+  else if (roll < 0.60) cursor.actionType = 'transform';
+  else if (roll < 0.75) cursor.actionType = 'rotate';
+  else if (roll < 0.85) cursor.actionType = 'fontChange';
+  else if (roll < 0.95) cursor.actionType = 'skew';
+  else                   cursor.actionType = 'drag';
 
   let aimX, aimY;
   const center = getPairCenter(cursor.targetPair);
@@ -560,7 +568,7 @@ function startHover() {
     cursorEl.className = 'grab';
   }
 
-  if (cursor.actionType === 'transform' || cursor.actionType === 'rotate') {
+  if (cursor.actionType === 'transform' || cursor.actionType === 'rotate' || cursor.actionType === 'skew') {
     showTransformBox(cursor.targetPair);
   }
 }
@@ -663,9 +671,16 @@ function biasedTargetScale(current) {
 
 function startTransformDrag() {
   const ps = pairState[cursor.targetPair];
-  // Pick independent target scales for X and Y
-  const targetSX = biasedTargetScale(ps.scaleX);
-  const targetSY = biasedTargetScale(ps.scaleY);
+  // 25% of the time: uniform scale (same X and Y)
+  let targetSX, targetSY;
+  if (Math.random() < 0.25) {
+    const s = biasedTargetScale(Math.max(ps.scaleX, ps.scaleY));
+    targetSX = s;
+    targetSY = s;
+  } else {
+    targetSX = biasedTargetScale(ps.scaleX);
+    targetSY = biasedTargetScale(ps.scaleY);
+  }
 
   // Where should the handle end up given those target scales?
   // handle_x = anchor_x + signX * 2 * naturalHW * targetSX
@@ -783,6 +798,76 @@ function startRotateRelease() {
   cursorEl.className = 'rotate';
 }
 
+// --- SKEW PHASES ---
+
+function startMoveToSkewHandle() {
+  // Move to a mid-edge handle (top-center, bottom-center, mid-left, mid-right)
+  const EDGE_HANDLES = ['tc', 'bc', 'ml', 'mr'];
+  cursor.selectedHandle = EDGE_HANDLES[Math.floor(Math.random() * EDGE_HANDLES.length)];
+  cursor.skewAxis = (cursor.selectedHandle === 'tc' || cursor.selectedHandle === 'bc') ? 'x' : 'y';
+  const boxRect = getPairScreenBox(cursor.targetPair);
+  const handlePos = getHandlePosition(boxRect, cursor.selectedHandle);
+  const aimX = handlePos.x + randomRange(-3, 3);
+  const aimY = handlePos.y + randomRange(-3, 3);
+  const dist = Math.sqrt((aimX - cursor.x) ** 2 + (aimY - cursor.y) ** 2);
+  cursor.path = generateMousePath(cursor.x, cursor.y, aimX, aimY, 40);
+  cursor.pathStartTime = performance.now();
+  cursor.pathDuration = getMoveDuration(dist);
+  cursor.phase = 'moveToSkewHandle';
+  cursorEl.className = '';
+}
+
+function startSkewHover() {
+  cursor.phase = 'skewHover';
+  cursor.hoverTimer = randomRange(50, 150);
+  // Use nwse/nesw as a stand-in for skew cursor
+  cursorEl.className = cursor.skewAxis === 'x' ? 'nesw' : 'nwse';
+}
+
+function startSkewGrab() {
+  cursor.phase = 'skewGrab';
+  cursor.hoverTimer = randomRange(30, 70);
+  cursor.startSkewX = pairState[cursor.targetPair].skewX;
+  cursor.startSkewY = pairState[cursor.targetPair].skewY;
+  cursor.dragStartCursorX = cursor.x;
+  cursor.dragStartCursorY = cursor.y;
+}
+
+function startSkewDrag() {
+  const ps = pairState[cursor.targetPair];
+  // Pick a target skew amount — bias back toward 0 if already skewed
+  let targetSkew;
+  const currentSkew = cursor.skewAxis === 'x' ? ps.skewX : ps.skewY;
+  if (Math.abs(currentSkew) > 0.3) {
+    targetSkew = -currentSkew * randomRange(0.3, 0.8);
+  } else {
+    targetSkew = randomRange(-0.5, 0.5); // ~±28 degrees
+  }
+  const delta = targetSkew - currentSkew;
+
+  // Drag horizontally for skewX, vertically for skewY
+  let destX, destY;
+  if (cursor.skewAxis === 'x') {
+    destX = cursor.x + delta * 120; // map skew radians to pixels
+    destY = cursor.y + randomRange(-5, 5);
+  } else {
+    destX = cursor.x + randomRange(-5, 5);
+    destY = cursor.y + delta * 120;
+  }
+
+  const dist = Math.sqrt((destX - cursor.x) ** 2 + (destY - cursor.y) ** 2);
+  cursor.path = generateMousePath(cursor.x, cursor.y, destX, destY, 60);
+  cursor.pathStartTime = performance.now();
+  cursor.pathDuration = getDragDuration(dist);
+  cursor.phase = 'skewDrag';
+}
+
+function startSkewRelease() {
+  cursor.phase = 'skewRelease';
+  cursor.hoverTimer = randomRange(80, 200);
+  cursorEl.className = '';
+}
+
 // --- FONT CHANGE PHASES ---
 
 function startFontClick() {
@@ -837,7 +922,7 @@ function recalcAllNaturalDims() {
   // Restore all transforms
   elements.forEach((el, i) => {
     const ps = pairState[i];
-    el.style.transform = `translate(${ps.x.toFixed(2)}px, ${ps.y.toFixed(2)}px) rotate(${ps.rotation.toFixed(4)}rad) scale(${ps.scaleX.toFixed(4)}, ${ps.scaleY.toFixed(4)})`;
+    el.style.transform = `translate(${ps.x.toFixed(2)}px, ${ps.y.toFixed(2)}px) rotate(${ps.rotation.toFixed(4)}rad) skew(${ps.skewX.toFixed(4)}rad, ${ps.skewY.toFixed(4)}rad) scale(${ps.scaleX.toFixed(4)}, ${ps.scaleY.toFixed(4)})`;
   });
 }
 
@@ -891,6 +976,8 @@ function animate(now) {
           startMoveToHandle();
         } else if (cursor.actionType === 'rotate') {
           startMoveToRotateHandle();
+        } else if (cursor.actionType === 'skew') {
+          startMoveToSkewHandle();
         } else if (cursor.actionType === 'fontChange') {
           startFontClick();
         } else {
@@ -1006,6 +1093,45 @@ function animate(now) {
       if (cursor.hoverTimer <= 0) startIdle();
       break;
 
+    // --- SKEW PATH ---
+    case 'moveToSkewHandle':
+      if (followPath(cursor, now) >= 1) startSkewHover();
+      break;
+
+    case 'skewHover':
+      cursor.hoverTimer -= dt;
+      cursor.x += handTremor(now * 0.01, 44) * 0.1;
+      cursor.y += handTremor(now * 0.01, 88) * 0.1;
+      if (cursor.hoverTimer <= 0) startSkewGrab();
+      break;
+
+    case 'skewGrab':
+      cursor.hoverTimer -= dt;
+      if (cursor.hoverTimer <= 0) startSkewDrag();
+      break;
+
+    case 'skewDrag': {
+      const t = followPath(cursor, now);
+      const ps = pairState[cursor.targetPair];
+      if (cursor.skewAxis === 'x') {
+        const dx = cursor.x - cursor.dragStartCursorX;
+        ps.skewX = clamp(cursor.startSkewX + dx / 120, -0.6, 0.6);
+      } else {
+        const dy = cursor.y - cursor.dragStartCursorY;
+        ps.skewY = clamp(cursor.startSkewY + dy / 120, -0.6, 0.6);
+      }
+      updateTransformBoxPosition(cursor.targetPair);
+      if (t >= 1) startSkewRelease();
+      break;
+    }
+
+    case 'skewRelease':
+      cursor.hoverTimer -= dt;
+      cursor.x += handTremor(now * 0.01, 66) * 0.08;
+      cursor.y += handTremor(now * 0.01, 11) * 0.08;
+      if (cursor.hoverTimer <= 0) startIdle();
+      break;
+
     // --- FONT CHANGE PATH ---
     case 'fontClick':
       cursor.hoverTimer -= dt;
@@ -1057,7 +1183,7 @@ function animate(now) {
 
   elements.forEach((el, i) => {
     const ps = pairState[i];
-    el.style.transform = `translate(${ps.x.toFixed(2)}px, ${ps.y.toFixed(2)}px) rotate(${ps.rotation.toFixed(4)}rad) scale(${ps.scaleX.toFixed(4)}, ${ps.scaleY.toFixed(4)})`;
+    el.style.transform = `translate(${ps.x.toFixed(2)}px, ${ps.y.toFixed(2)}px) rotate(${ps.rotation.toFixed(4)}rad) skew(${ps.skewX.toFixed(4)}rad, ${ps.skewY.toFixed(4)}rad) scale(${ps.scaleX.toFixed(4)}, ${ps.scaleY.toFixed(4)})`;
   });
 
   // Keep transform box in sync during drag/scale/rotate if visible
@@ -1081,6 +1207,11 @@ function updateCursorClass() {
       phase === 'transformDrag' || phase === 'transformRelease') {
     const h = cursor.selectedHandle;
     cursorEl.className = (h === 'tl' || h === 'br') ? 'nwse' : 'nesw';
+    return;
+  }
+  if (phase === 'skewHover' || phase === 'skewGrab' ||
+      phase === 'skewDrag' || phase === 'skewRelease') {
+    cursorEl.className = cursor.skewAxis === 'x' ? 'nesw' : 'nwse';
     return;
   }
   cursorEl.className = '';
