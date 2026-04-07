@@ -5,11 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Amalgamation</title>
 <style>
-  * {
-    margin: 0;
-    padding: 0;
-    box-sizing: border-box;
-  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
 
   body {
     background: #0a0a0a;
@@ -19,7 +15,7 @@
     min-height: 100vh;
     overflow: hidden;
     font-family: 'Courier New', Courier, monospace;
-    cursor: none;
+    cursor: none !important;
   }
 
   .text-container {
@@ -36,78 +32,137 @@
     display: inline-block;
     will-change: transform;
     letter-spacing: 0.02em;
+    transform-origin: center center;
   }
 
-  .letter-pair.grabbed {
-    color: #ffffff;
-  }
+  .letter-pair.grabbed { color: #ffffff; }
 
+  /* --- Fake cursor --- */
   #cursor {
     position: fixed;
-    top: 0;
-    left: 0;
+    top: 0; left: 0;
     pointer-events: none;
     z-index: 9999;
     will-change: transform;
-    /* Default arrow cursor via SVG */
   }
-
-  #cursor .arrow {
-    display: block;
-  }
-  #cursor .grab {
-    display: none;
-  }
-  #cursor .grabbing {
-    display: none;
-  }
-
-  #cursor.grab .arrow { display: none; }
-  #cursor.grab .grab { display: block; }
-  #cursor.grab .grabbing { display: none; }
-
-  #cursor.grabbing .arrow { display: none; }
-  #cursor.grabbing .grab { display: none; }
+  #cursor svg { display: none; }
+  #cursor .arrow   { display: block; }
+  #cursor.grab     .arrow { display: none; }
+  #cursor.grab     .grab  { display: block; }
+  #cursor.grabbing .arrow    { display: none; }
   #cursor.grabbing .grabbing { display: block; }
+  #cursor.nwse .arrow { display: none; }
+  #cursor.nwse .resize-nwse { display: block; }
+  #cursor.nesw .arrow { display: none; }
+  #cursor.nesw .resize-nesw { display: block; }
+
+  /* --- Transform box --- */
+  #transform-box {
+    position: fixed;
+    pointer-events: none;
+    z-index: 9998;
+    display: none;
+  }
+  #transform-box.visible { display: block; }
+
+  #transform-box .border {
+    position: absolute;
+    inset: 0;
+    border: 1.5px dashed rgba(120, 170, 255, 0.7);
+  }
+
+  #transform-box .handle {
+    position: absolute;
+    width: 8px;
+    height: 8px;
+    background: #fff;
+    border: 1.5px solid rgba(120, 170, 255, 0.9);
+  }
+  /* corners */
+  #transform-box .handle.tl { top: -4px; left: -4px; }
+  #transform-box .handle.tc { top: -4px; left: calc(50% - 4px); }
+  #transform-box .handle.tr { top: -4px; right: -4px; }
+  #transform-box .handle.ml { top: calc(50% - 4px); left: -4px; }
+  #transform-box .handle.mr { top: calc(50% - 4px); right: -4px; }
+  #transform-box .handle.bl { bottom: -4px; left: -4px; }
+  #transform-box .handle.bc { bottom: -4px; left: calc(50% - 4px); }
+  #transform-box .handle.br { bottom: -4px; right: -4px; }
 </style>
 </head>
 <body>
 
 <div class="text-container" id="container"></div>
 
+<!-- Transform bounding box overlay -->
+<div id="transform-box">
+  <div class="border"></div>
+  <div class="handle tl"></div>
+  <div class="handle tc"></div>
+  <div class="handle tr"></div>
+  <div class="handle ml"></div>
+  <div class="handle mr"></div>
+  <div class="handle bl"></div>
+  <div class="handle bc"></div>
+  <div class="handle br"></div>
+</div>
+
 <!-- Fake cursor element -->
 <div id="cursor">
-  <!-- Arrow (default) -->
+  <!-- Arrow -->
   <svg class="arrow" width="24" height="24" viewBox="0 0 24 24" fill="none">
     <path d="M5 3l14 9-7 1.5L8 21z" fill="#fff" stroke="#000" stroke-width="1"/>
   </svg>
-  <!-- Open hand (hover/grab ready) -->
+  <!-- Open hand -->
   <svg class="grab" width="28" height="28" viewBox="0 0 28 28" fill="none">
     <g fill="#fff" stroke="#000" stroke-width="0.8">
-      <!-- palm -->
       <rect x="7" y="14" width="14" height="10" rx="4"/>
-      <!-- fingers -->
       <rect x="8"  y="6"  width="3" height="10" rx="1.5"/>
       <rect x="12" y="4"  width="3" height="12" rx="1.5"/>
       <rect x="16" y="6"  width="3" height="10" rx="1.5"/>
       <rect x="20" y="9"  width="3" height="8"  rx="1.5"/>
     </g>
   </svg>
-  <!-- Closed hand (grabbing/dragging) -->
+  <!-- Closed hand -->
   <svg class="grabbing" width="28" height="28" viewBox="0 0 28 28" fill="none">
     <g fill="#fff" stroke="#000" stroke-width="0.8">
-      <!-- palm -->
       <rect x="7" y="12" width="14" height="12" rx="4"/>
-      <!-- curled fingers -->
       <rect x="8"  y="9"  width="3" height="6" rx="1.5"/>
       <rect x="12" y="8"  width="3" height="7" rx="1.5"/>
       <rect x="16" y="9"  width="3" height="6" rx="1.5"/>
       <rect x="20" y="10" width="3" height="5" rx="1.5"/>
     </g>
   </svg>
+  <!-- Resize NWSE (top-left / bottom-right diagonal) -->
+  <svg class="resize-nwse" width="24" height="24" viewBox="0 0 24 24" fill="none">
+    <g stroke="#fff" stroke-width="2" stroke-linecap="round">
+      <line x1="5" y1="5" x2="19" y2="19"/>
+      <polyline points="5,11 5,5 11,5"/>
+      <polyline points="19,13 19,19 13,19"/>
+    </g>
+    <g stroke="#000" stroke-width="3.5" stroke-linecap="round" opacity="0.3">
+      <line x1="5" y1="5" x2="19" y2="19"/>
+    </g>
+    <g stroke="#fff" stroke-width="2" stroke-linecap="round">
+      <line x1="5" y1="5" x2="19" y2="19"/>
+      <polyline points="5,11 5,5 11,5"/>
+      <polyline points="19,13 19,19 13,19"/>
+    </g>
+  </svg>
+  <!-- Resize NESW (top-right / bottom-left diagonal) -->
+  <svg class="resize-nesw" width="24" height="24" viewBox="0 0 24 24" fill="none">
+    <g stroke="#000" stroke-width="3.5" stroke-linecap="round" opacity="0.3">
+      <line x1="19" y1="5" x2="5" y2="19"/>
+    </g>
+    <g stroke="#fff" stroke-width="2" stroke-linecap="round">
+      <line x1="19" y1="5" x2="5" y2="19"/>
+      <polyline points="13,5 19,5 19,11"/>
+      <polyline points="11,19 5,19 5,13"/>
+    </g>
+  </svg>
 </div>
 
 <script>
+// ==================== SETUP ====================
 const word = "Amalgamation";
 const pairStrings = [];
 for (let i = 0; i < word.length; i += 2) {
@@ -116,6 +171,7 @@ for (let i = 0; i < word.length; i += 2) {
 
 const container = document.getElementById("container");
 const cursorEl = document.getElementById("cursor");
+const transformBox = document.getElementById("transform-box");
 const elements = [];
 
 pairStrings.forEach((pair) => {
@@ -126,123 +182,161 @@ pairStrings.forEach((pair) => {
   elements.push(span);
 });
 
-// --- Realistic mouse movement via sampled bezier paths ---
+// Per-pair state: offset + scale
+const pairState = elements.map(() => ({ x: 0, y: 0, scale: 1 }));
 
-//102-parameter Fitts's law style mouse model:
-// Real mice accelerate fast, cruise, then decelerate with slight overshoot.
-// We pre-compute a path of waypoints, then replay them with realistic timing.
-
+// ==================== UTILS ====================
 function randomRange(min, max) {
   return min + Math.random() * (max - min);
 }
-
 function lerp(a, b, t) {
   return a + (b - a) * t;
 }
+function clamp(v, lo, hi) {
+  return Math.max(lo, Math.min(hi, v));
+}
 
-// Attempt to mimic real mouse acceleration curves:
-// fast ramp up, sustained middle, ease-out with possible micro-overshoot
+// Mouse acceleration curve
 function mouseEase(t) {
-  // modified ease with slight overshoot at the end
   if (t < 0.15) {
-    // accelerate (quadratic in)
     const s = t / 0.15;
     return 0.15 * s * s;
   } else if (t < 0.7) {
-    // cruise (mostly linear)
     return 0.15 + (t - 0.15) * (0.75 / 0.55);
   } else {
-    // decelerate with slight overshoot
     const s = (t - 0.7) / 0.3;
-    // cubic ease-out with a tiny bump past 1.0
     const overshoot = 1.02;
-    const val = 0.9 + 0.1 * (1 - Math.pow(1 - s, 3)) * overshoot;
-    return Math.min(val, 1.005);
+    return Math.min(0.9 + 0.1 * (1 - Math.pow(1 - s, 3)) * overshoot, 1.005);
   }
 }
 
-// Generate micro-jitter that looks like hand tremor on a mouse
 function handTremor(t, seed) {
-  return Math.sin(t * 47.3 + seed) * 0.3
-       + Math.sin(t * 91.7 + seed * 2.3) * 0.15
-       + Math.sin(t * 23.1 + seed * 0.7) * 0.2;
+  return Math.sin(t * 47.3 + seed) * 0.7
+       + Math.sin(t * 91.7 + seed * 2.3) * 0.4
+       + Math.sin(t * 23.1 + seed * 0.7) * 0.5
+       + Math.sin(t * 137.9 + seed * 3.1) * 0.25;
 }
 
-// Generate a curved path between two points with slight arc + jitter
 function generateMousePath(x0, y0, x1, y1, numPoints) {
   const points = [];
-  // Random slight curve offset (perpendicular to the line)
-  const dx = x1 - x0;
-  const dy = y1 - y0;
-  const dist = Math.sqrt(dx * dx + dy * dy);
-  // perpendicular
-  const px = -dy / (dist || 1);
-  const py = dx / (dist || 1);
-  // slight arc: real mouse paths aren't perfectly straight
+  const dx = x1 - x0, dy = y1 - y0;
+  const dist = Math.sqrt(dx * dx + dy * dy) || 1;
+  const px = -dy / dist, py = dx / dist;
   const arcAmount = randomRange(-dist * 0.08, dist * 0.08);
   const seed = Math.random() * 1000;
 
   for (let i = 0; i <= numPoints; i++) {
     const t = i / numPoints;
     const eased = mouseEase(t);
-    // base position along line
     let x = lerp(x0, x1, eased);
     let y = lerp(y0, y1, eased);
-    // add arc (peaks at middle)
     const arcT = Math.sin(t * Math.PI);
     x += px * arcAmount * arcT;
     y += py * arcAmount * arcT;
-    // add hand tremor (small, high frequency)
-    x += handTremor(t * 10, seed) * 0.6;
-    y += handTremor(t * 10, seed + 500) * 0.6;
+    x += handTremor(t * 10, seed) * 1.2;
+    y += handTremor(t * 10, seed + 500) * 1.2;
     points.push({ x, y });
   }
   return points;
 }
 
-// Timing: real mouse moves fast over distance, with variable speed
 function getMoveDuration(dist) {
-  // Fitts's law inspired: longer distance = more time, but not linear
-  return 200 + Math.sqrt(dist) * 25 + randomRange(0, 150);
+  // Fast, snappy movements like a real mouse
+  return 80 + Math.sqrt(dist) * 10 + randomRange(0, 60);
 }
-
 function getDragDuration(dist) {
-  // Dragging is slower than free movement
-  return 300 + Math.sqrt(dist) * 35 + randomRange(0, 200);
+  return 100 + Math.sqrt(dist) * 14 + randomRange(0, 80);
 }
 
-// --- State machine for the cursor ---
-// Phases: idle -> moveToTarget -> hover -> grab -> drag -> release -> idle
+function followPath(cursor, now) {
+  const elapsed = now - cursor.pathStartTime;
+  const t = Math.min(elapsed / cursor.pathDuration, 1);
+  const idx = Math.min(Math.floor(t * (cursor.path.length - 1)), cursor.path.length - 1);
+  cursor.x = cursor.path[idx].x;
+  cursor.y = cursor.path[idx].y;
+  return t;
+}
 
-const pairOffsets = elements.map(() => ({ x: 0, y: 0 }));
+// ==================== TRANSFORM BOX ====================
+// Which handle names correspond to which corner
+const HANDLE_NAMES = ['tl','tc','tr','ml','mr','bl','bc','br'];
+const CORNER_HANDLES = ['tl','tr','bl','br'];
 
+function getHandlePosition(rect, handle) {
+  switch (handle) {
+    case 'tl': return { x: rect.left,                    y: rect.top };
+    case 'tc': return { x: rect.left + rect.width / 2,   y: rect.top };
+    case 'tr': return { x: rect.left + rect.width,        y: rect.top };
+    case 'ml': return { x: rect.left,                    y: rect.top + rect.height / 2 };
+    case 'mr': return { x: rect.left + rect.width,        y: rect.top + rect.height / 2 };
+    case 'bl': return { x: rect.left,                    y: rect.top + rect.height };
+    case 'bc': return { x: rect.left + rect.width / 2,   y: rect.top + rect.height };
+    case 'br': return { x: rect.left + rect.width,        y: rect.top + rect.height };
+  }
+}
+
+function getHandleCursorClass(handle) {
+  if (handle === 'tl' || handle === 'br') return 'nwse';
+  if (handle === 'tr' || handle === 'bl') return 'nesw';
+  // For edge handles, just use nwse as a fallback
+  return 'nwse';
+}
+
+// The "anchor" is the opposite corner/edge from the grabbed handle
+function getAnchorHandle(handle) {
+  const map = { tl:'br', tr:'bl', bl:'tr', br:'tl', tc:'bc', bc:'tc', ml:'mr', mr:'ml' };
+  return map[handle];
+}
+
+function updateTransformBoxPosition(pairIndex) {
+  const el = elements[pairIndex];
+  const ps = pairState[pairIndex];
+  // Get the element's base rect (before our transform)
+  // We need to compute where the scaled element visually is
+  const baseRect = el.getBoundingClientRect();
+  // getBoundingClientRect already includes the CSS transform,
+  // so we can use it directly
+  const pad = 8;
+  transformBox.style.left   = (baseRect.left - pad) + 'px';
+  transformBox.style.top    = (baseRect.top - pad) + 'px';
+  transformBox.style.width  = (baseRect.width + pad * 2) + 'px';
+  transformBox.style.height = (baseRect.height + pad * 2) + 'px';
+}
+
+function showTransformBox(pairIndex) {
+  transformBox.classList.add('visible');
+  updateTransformBoxPosition(pairIndex);
+}
+
+function hideTransformBox() {
+  transformBox.classList.remove('visible');
+}
+
+// ==================== STATE MACHINE ====================
 const cursor = {
   x: window.innerWidth / 2,
   y: window.innerHeight / 2 - 100,
   targetPair: -1,
   phase: 'idle',
   path: [],
-  pathIndex: 0,
   pathStartTime: 0,
   pathDuration: 0,
-  dragStartPairX: 0,
-  dragStartPairY: 0,
   dragStartCursorX: 0,
   dragStartCursorY: 0,
+  dragStartPairX: 0,
+  dragStartPairY: 0,
   idleTimer: 0,
   hoverTimer: 0,
+  // transform-specific
+  actionType: 'drag', // 'drag' or 'transform'
+  selectedHandle: 'br',
+  anchorX: 0,
+  anchorY: 0,
+  startScale: 1,
+  startDist: 1,
 };
 
-function getPairCenter(i) {
-  const rect = elements[i].getBoundingClientRect();
-  return {
-    x: rect.left + rect.width / 2 + pairOffsets[i].x * 0,
-    y: rect.top + rect.height / 2 + pairOffsets[i].y * 0,
-  };
-}
-
 function pickNextTarget() {
-  // Pick a random pair, avoid the same one twice in a row sometimes
   let next;
   do {
     next = Math.floor(Math.random() * elements.length);
@@ -250,15 +344,45 @@ function pickNextTarget() {
   return next;
 }
 
+function getPairCenter(i) {
+  const rect = elements[i].getBoundingClientRect();
+  return { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 };
+}
+
+function getPairRect(i) {
+  const r = elements[i].getBoundingClientRect();
+  return { left: r.left, top: r.top, width: r.width, height: r.height };
+}
+
+// --- Phase transitions ---
+
+function startIdle() {
+  cursor.phase = 'idle';
+  cursor.idleTimer = randomRange(80, 350);
+  cursorEl.className = '';
+  hideTransformBox();
+}
+
 function startMoveToTarget() {
   cursor.targetPair = pickNextTarget();
-  const center = getPairCenter(cursor.targetPair);
-  // Aim slightly offset from center (like a real user clicking near text)
-  const aimX = center.x + randomRange(-10, 10);
-  const aimY = center.y + randomRange(-8, 8);
+  // Decide action type: ~40% transform, ~60% drag
+  cursor.actionType = Math.random() < 0.4 ? 'transform' : 'drag';
+
+  let aimX, aimY;
+
+  if (cursor.actionType === 'drag') {
+    const center = getPairCenter(cursor.targetPair);
+    aimX = center.x + randomRange(-10, 10);
+    aimY = center.y + randomRange(-8, 8);
+  } else {
+    // For transform: move to the pair center first (we'll move to handle after)
+    const center = getPairCenter(cursor.targetPair);
+    aimX = center.x + randomRange(-5, 5);
+    aimY = center.y + randomRange(-5, 5);
+  }
+
   const dist = Math.sqrt((aimX - cursor.x) ** 2 + (aimY - cursor.y) ** 2);
   cursor.path = generateMousePath(cursor.x, cursor.y, aimX, aimY, 60);
-  cursor.pathIndex = 0;
   cursor.pathStartTime = performance.now();
   cursor.pathDuration = getMoveDuration(dist);
   cursor.phase = 'moveToTarget';
@@ -267,44 +391,79 @@ function startMoveToTarget() {
 
 function startHover() {
   cursor.phase = 'hover';
-  cursor.hoverTimer = randomRange(150, 500);
+  cursor.hoverTimer = randomRange(80, 250);
   cursorEl.className = 'grab';
+
+  if (cursor.actionType === 'transform') {
+    showTransformBox(cursor.targetPair);
+  }
+}
+
+function startMoveToHandle() {
+  // Pick a corner handle
+  cursor.selectedHandle = CORNER_HANDLES[Math.floor(Math.random() * CORNER_HANDLES.length)];
+  const boxRect = transformBox.getBoundingClientRect();
+  const handlePos = getHandlePosition(boxRect, cursor.selectedHandle);
+  const aimX = handlePos.x + randomRange(-2, 2);
+  const aimY = handlePos.y + randomRange(-2, 2);
+  const dist = Math.sqrt((aimX - cursor.x) ** 2 + (aimY - cursor.y) ** 2);
+  cursor.path = generateMousePath(cursor.x, cursor.y, aimX, aimY, 40);
+  cursor.pathStartTime = performance.now();
+  cursor.pathDuration = getMoveDuration(dist);
+  cursor.phase = 'moveToHandle';
+  cursorEl.className = '';
+}
+
+function startHandleHover() {
+  cursor.phase = 'handleHover';
+  cursor.hoverTimer = randomRange(50, 150);
+  cursorEl.className = getHandleCursorClass(cursor.selectedHandle);
 }
 
 function startGrab() {
-  cursor.phase = 'grab';
-  cursor.hoverTimer = randomRange(50, 150);
-  cursorEl.className = 'grabbing';
-  elements[cursor.targetPair].classList.add('grabbed');
-  cursor.dragStartPairX = pairOffsets[cursor.targetPair].x;
-  cursor.dragStartPairY = pairOffsets[cursor.targetPair].y;
-  cursor.dragStartCursorX = cursor.x;
-  cursor.dragStartCursorY = cursor.y;
+  if (cursor.actionType === 'drag') {
+    cursor.phase = 'grab';
+    cursor.hoverTimer = randomRange(30, 80);
+    cursorEl.className = 'grabbing';
+    elements[cursor.targetPair].classList.add('grabbed');
+    cursor.dragStartPairX = pairState[cursor.targetPair].x;
+    cursor.dragStartPairY = pairState[cursor.targetPair].y;
+    cursor.dragStartCursorX = cursor.x;
+    cursor.dragStartCursorY = cursor.y;
+  }
+}
+
+function startTransformGrab() {
+  cursor.phase = 'transformGrab';
+  cursor.hoverTimer = randomRange(30, 70);
+  // Keep resize cursor during grab
+  const anchorHandle = getAnchorHandle(cursor.selectedHandle);
+  const boxRect = transformBox.getBoundingClientRect();
+  const anchorPos = getHandlePosition(boxRect, anchorHandle);
+  cursor.anchorX = anchorPos.x;
+  cursor.anchorY = anchorPos.y;
+  cursor.startScale = pairState[cursor.targetPair].scale;
+  cursor.startDist = Math.sqrt(
+    (cursor.x - cursor.anchorX) ** 2 + (cursor.y - cursor.anchorY) ** 2
+  ) || 1;
 }
 
 function startDrag() {
-  // Pick a drag destination: move the pair some distance in a random direction
   const dragDist = randomRange(20, 80);
   const dragAngle = Math.random() * Math.PI * 2;
-
-  // Bias toward keeping pairs somewhat close to origin
-  const currentX = pairOffsets[cursor.targetPair].x;
-  const currentY = pairOffsets[cursor.targetPair].y;
+  const currentX = pairState[cursor.targetPair].x;
+  const currentY = pairState[cursor.targetPair].y;
   const distFromOrigin = Math.sqrt(currentX ** 2 + currentY ** 2);
   let biasAngle = dragAngle;
   if (distFromOrigin > 30) {
-    // Bias back toward origin
     const toOrigin = Math.atan2(-currentY, -currentX);
     biasAngle = lerp(dragAngle, toOrigin, 0.4 + Math.random() * 0.3);
   }
-
   const destX = cursor.x + Math.cos(biasAngle) * dragDist;
   const destY = cursor.y + Math.sin(biasAngle) * dragDist;
   const dist = Math.sqrt((destX - cursor.x) ** 2 + (destY - cursor.y) ** 2);
 
-  // Sometimes do a multi-segment drag (change direction mid-drag)
   if (Math.random() < 0.35) {
-    // Two-part drag: go one way then adjust
     const midX = cursor.x + Math.cos(biasAngle) * dragDist * 0.5 + randomRange(-15, 15);
     const midY = cursor.y + Math.sin(biasAngle) * dragDist * 0.5 + randomRange(-15, 15);
     const path1 = generateMousePath(cursor.x, cursor.y, midX, midY, 30);
@@ -314,43 +473,64 @@ function startDrag() {
     cursor.path = generateMousePath(cursor.x, cursor.y, destX, destY, 60);
   }
 
-  cursor.pathIndex = 0;
   cursor.pathStartTime = performance.now();
   cursor.pathDuration = getDragDuration(dist);
   cursor.phase = 'drag';
   cursor.dragStartCursorX = cursor.x;
   cursor.dragStartCursorY = cursor.y;
-  cursor.dragStartPairX = pairOffsets[cursor.targetPair].x;
-  cursor.dragStartPairY = pairOffsets[cursor.targetPair].y;
+  cursor.dragStartPairX = pairState[cursor.targetPair].x;
+  cursor.dragStartPairY = pairState[cursor.targetPair].y;
+}
+
+function startTransformDrag() {
+  // Drag the handle to scale. Pick a target scale.
+  const ps = pairState[cursor.targetPair];
+  // Bias toward returning to scale 1 if already scaled a lot
+  let targetScale;
+  if (ps.scale > 1.3) {
+    targetScale = randomRange(0.7, 1.1);
+  } else if (ps.scale < 0.7) {
+    targetScale = randomRange(0.9, 1.4);
+  } else {
+    targetScale = randomRange(0.6, 1.6);
+  }
+  const scaleRatio = targetScale / cursor.startScale;
+  // The handle needs to move to a position that's scaleRatio * startDist from anchor
+  const targetDist = cursor.startDist * scaleRatio;
+  const dx = cursor.x - cursor.anchorX;
+  const dy = cursor.y - cursor.anchorY;
+  const currentDist = Math.sqrt(dx * dx + dy * dy) || 1;
+  const dirX = dx / currentDist;
+  const dirY = dy / currentDist;
+  const destX = cursor.anchorX + dirX * targetDist;
+  const destY = cursor.anchorY + dirY * targetDist;
+  const moveDist = Math.sqrt((destX - cursor.x) ** 2 + (destY - cursor.y) ** 2);
+
+  cursor.path = generateMousePath(cursor.x, cursor.y, destX, destY, 60);
+  cursor.pathStartTime = performance.now();
+  cursor.pathDuration = getDragDuration(moveDist);
+  cursor.phase = 'transformDrag';
 }
 
 function startRelease() {
   cursor.phase = 'release';
-  cursor.hoverTimer = randomRange(100, 400);
-  cursorEl.className = 'grab';
-  elements[cursor.targetPair].classList.remove('grabbed');
+  cursor.hoverTimer = randomRange(50, 180);
+  if (cursor.actionType === 'drag') {
+    cursorEl.className = 'grab';
+    elements[cursor.targetPair].classList.remove('grabbed');
+  } else {
+    cursorEl.className = getHandleCursorClass(cursor.selectedHandle);
+  }
 }
 
-function startIdle() {
-  cursor.phase = 'idle';
-  cursor.idleTimer = randomRange(200, 800);
+function startTransformRelease() {
+  cursor.phase = 'transformRelease';
+  cursor.hoverTimer = randomRange(80, 250);
   cursorEl.className = '';
 }
 
-// Follow path and return progress 0-1
-function followPath(now) {
-  const elapsed = now - cursor.pathStartTime;
-  const t = Math.min(elapsed / cursor.pathDuration, 1);
-  const idx = Math.min(Math.floor(t * (cursor.path.length - 1)), cursor.path.length - 1);
-  const point = cursor.path[idx];
-  cursor.x = point.x;
-  cursor.y = point.y;
-  return t;
-}
-
+// ==================== ANIMATION LOOP ====================
 let lastTime = performance.now();
-
-// Start the loop
 startIdle();
 
 function animate(now) {
@@ -360,74 +540,105 @@ function animate(now) {
   switch (cursor.phase) {
     case 'idle':
       cursor.idleTimer -= dt;
-      if (cursor.idleTimer <= 0) {
-        startMoveToTarget();
-      }
+      if (cursor.idleTimer <= 0) startMoveToTarget();
       break;
 
-    case 'moveToTarget': {
-      const t = followPath(now);
-      if (t >= 1) {
-        startHover();
-      }
+    case 'moveToTarget':
+      if (followPath(cursor, now) >= 1) startHover();
       break;
-    }
 
     case 'hover':
       cursor.hoverTimer -= dt;
-      // slight idle jitter while hovering
-      cursor.x += handTremor(now * 0.01, 42) * 0.08;
-      cursor.y += handTremor(now * 0.01, 99) * 0.08;
+      cursor.x += handTremor(now * 0.01, 42) * 0.15;
+      cursor.y += handTremor(now * 0.01, 99) * 0.15;
       if (cursor.hoverTimer <= 0) {
-        startGrab();
+        if (cursor.actionType === 'transform') {
+          startMoveToHandle();
+        } else {
+          startGrab();
+        }
       }
       break;
 
+    // --- DRAG PATH ---
     case 'grab':
       cursor.hoverTimer -= dt;
-      if (cursor.hoverTimer <= 0) {
-        startDrag();
-      }
+      if (cursor.hoverTimer <= 0) startDrag();
       break;
 
     case 'drag': {
-      const prevX = cursor.x;
-      const prevY = cursor.y;
-      const t = followPath(now);
-      // Move the pair by the same delta as the cursor
+      const t = followPath(cursor, now);
       const cdx = cursor.x - cursor.dragStartCursorX;
       const cdy = cursor.y - cursor.dragStartCursorY;
-      pairOffsets[cursor.targetPair].x = cursor.dragStartPairX + cdx;
-      pairOffsets[cursor.targetPair].y = cursor.dragStartPairY + cdy;
-      if (t >= 1) {
-        startRelease();
-      }
+      pairState[cursor.targetPair].x = cursor.dragStartPairX + cdx;
+      pairState[cursor.targetPair].y = cursor.dragStartPairY + cdy;
+      if (t >= 1) startRelease();
       break;
     }
 
     case 'release':
       cursor.hoverTimer -= dt;
-      cursor.x += handTremor(now * 0.01, 77) * 0.05;
-      cursor.y += handTremor(now * 0.01, 33) * 0.05;
-      if (cursor.hoverTimer <= 0) {
-        startIdle();
-      }
+      cursor.x += handTremor(now * 0.01, 77) * 0.12;
+      cursor.y += handTremor(now * 0.01, 33) * 0.12;
+      if (cursor.hoverTimer <= 0) startIdle();
+      break;
+
+    // --- TRANSFORM PATH ---
+    case 'moveToHandle':
+      if (followPath(cursor, now) >= 1) startHandleHover();
+      break;
+
+    case 'handleHover':
+      cursor.hoverTimer -= dt;
+      cursor.x += handTremor(now * 0.01, 55) * 0.12;
+      cursor.y += handTremor(now * 0.01, 66) * 0.12;
+      if (cursor.hoverTimer <= 0) startTransformGrab();
+      break;
+
+    case 'transformGrab':
+      cursor.hoverTimer -= dt;
+      if (cursor.hoverTimer <= 0) startTransformDrag();
+      break;
+
+    case 'transformDrag': {
+      const t = followPath(cursor, now);
+      // Compute new scale based on distance from anchor
+      const dx = cursor.x - cursor.anchorX;
+      const dy = cursor.y - cursor.anchorY;
+      const currentDist = Math.sqrt(dx * dx + dy * dy) || 1;
+      const scaleRatio = currentDist / cursor.startDist;
+      pairState[cursor.targetPair].scale = clamp(cursor.startScale * scaleRatio, 0.3, 2.5);
+      // Update the transform box to track the scaled element
+      updateTransformBoxPosition(cursor.targetPair);
+      if (t >= 1) startTransformRelease();
+      break;
+    }
+
+    case 'transformRelease':
+      cursor.hoverTimer -= dt;
+      cursor.x += handTremor(now * 0.01, 88) * 0.1;
+      cursor.y += handTremor(now * 0.01, 44) * 0.1;
+      if (cursor.hoverTimer <= 0) startIdle();
       break;
   }
 
-  // Update cursor position
+  // --- RENDER ---
   cursorEl.style.transform = `translate(${cursor.x.toFixed(1)}px, ${cursor.y.toFixed(1)}px)`;
 
-  // Update pair positions
   elements.forEach((el, i) => {
-    el.style.transform = `translate(${pairOffsets[i].x.toFixed(2)}px, ${pairOffsets[i].y.toFixed(2)}px)`;
+    const ps = pairState[i];
+    el.style.transform = `translate(${ps.x.toFixed(2)}px, ${ps.y.toFixed(2)}px) scale(${ps.scale.toFixed(4)})`;
   });
+
+  // Keep transform box in sync during drag/scale if visible
+  if (transformBox.classList.contains('visible') && cursor.targetPair >= 0) {
+    updateTransformBoxPosition(cursor.targetPair);
+  }
 
   requestAnimationFrame(animate);
 }
 
 requestAnimationFrame(animate);
 </script>
-
 </body>
 </html>
