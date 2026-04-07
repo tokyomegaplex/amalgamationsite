@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Explorations - Amalgamation</title>
+  <link rel="stylesheet" href="css/style.css">
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
+      "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"
+    }
+  }
+  </script>
+</head>
+<body>
+  <canvas id="noise-bg"></canvas>
+
+  <nav id="nav">
+    <a href="index.html" class="logo">
+      <canvas id="hero-title-canvas"></canvas>
+    </a>
+    <div class="nav-links">
+      <a href="index.html">Work</a>
+      <a href="experiments.html" class="active">Explorations</a>
+      <a href="network/">Network</a>
+    </div>
+  </nav>
+
+  <main>
+    <section id="experiments-hero">
+      <h2 class="section-title">Explorations</h2>
+    </section>
+
+    <section id="experiments-grid">
+      <div class="experiment-card">
+        <div class="experiment-embed">
+          <div style="padding:56.25% 0 0 0;position:relative;">
+            <iframe src="https://player.vimeo.com/video/1014978083?h=9a62a0ccb1&title=0&byline=0&portrait=0"
+              style="position:absolute;top:0;left:0;width:100%;height:100%;border-radius:8px;"
+              frameborder="0" allow="autoplay; fullscreen; picture-in-picture" allowfullscreen></iframe>
+          </div>
+        </div>
+        <h3>VR Animation</h3>
+        <p>Using VR animation app Quill and procedural tools like Blender and Houdini, Chris developed a unique workflow combining live puppetry, frame-by-frame animation, replacement animation, and stop-motion techniques. These are brought into Houdini for meshing, simulation, shaders, lighting, hair, and particle effects.</p>
+        <div class="vr-examples" style="display:grid; grid-template-columns: repeat(4, 1fr); gap:12px; margin-top:20px;">
+          <video autoplay loop muted playsinline style="width:100%; border-radius:8px;">
+            <source src="assets/gifs/space-station.mp4" type="video/mp4">
+          </video>
+          <video autoplay loop muted playsinline style="width:100%; border-radius:8px;">
+            <source src="assets/gifs/jiggling.mp4" type="video/mp4">
+          </video>
+          <video autoplay loop muted playsinline style="width:100%; border-radius:8px;">
+            <source src="assets/gifs/dog-closeup.mp4" type="video/mp4">
+          </video>
+          <video autoplay loop muted playsinline style="width:100%; border-radius:8px;">
+            <source src="assets/gifs/bike.mp4" type="video/mp4">
+          </video>
+        </div>
+      </div>
+
+      <div class="experiment-card">
+        <div class="experiment-embed">
+          <div style="padding:56.25% 0 0 0;position:relative;">
+            <iframe src="https://player.vimeo.com/video/1150530575?title=0&byline=0&portrait=0"
+              style="position:absolute;top:0;left:0;width:100%;height:100%;border-radius:8px;"
+              frameborder="0" allow="autoplay; fullscreen; picture-in-picture" allowfullscreen></iframe>
+          </div>
+        </div>
+        <h3>Game Night</h3>
+        <p>Animated in VR with Quill — the characters were "modeled" in Quill and animated without needing any rigs, over the course of 2–3 days for the entire short. Then imported into Houdini to run through Chris' custom setup that meshed them and added jiggle / procedural animation tweaks, and then rendered in Blender. Animating in VR without rigs enabled them to be created very quickly and expressively, more like 2D cel animation, while also not being limited by a rigged armature.</p>
+      </div>
+
+      <div class="experiment-card">
+        <div class="experiment-embed">
+          <div style="padding:56.25% 0 0 0;position:relative;">
+            <iframe src="https://www.youtube.com/embed/w2lTPHZ4emA"
+              style="position:absolute;top:0;left:0;width:100%;height:100%;border-radius:8px;"
+              frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowfullscreen></iframe>
+          </div>
+        </div>
+        <h3>Tutorials</h3>
+        <p>Chris loves to share his knowledge and make tutorials on his <a href="https://www.youtube.com/@chr1st0pher" target="_blank" style="color:#7788ff; text-decoration:underline;">YouTube page</a>.</p>
+      </div>
+
+      <!-- Placeholder for future explorations -->
+      <div class="experiment-card experiment-placeholder">
+        <div class="placeholder-inner">
+          <span>+</span>
+          <p>More explorations coming soon</p>
+        </div>
+      </div>
+    </section>
+
+    <section id="footer-logo">
+      <canvas id="footer-hero-canvas"></canvas>
+    </section>
+
+    <footer>
+      <p>Amalgamation &copy; 2026</p>
+    </footer>
+  </main>
+
+  <script src="js/noise.js"></script>
+  <script src="js/main.js"></script>
+  <script type="module">
+    import { initHeroTitle } from './js/hero-title.js';
+    // Nav title
+    const navCanvas = document.getElementById('hero-title-canvas');
+    if (navCanvas) initHeroTitle(navCanvas, 'assets/hero.glb');
+    const footerCanvas = document.getElementById('footer-hero-canvas');
+    if (footerCanvas) initHeroTitle(footerCanvas, 'assets/hero.glb');
+  </script>
+</body>
+</html>

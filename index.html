@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Amalgamation</title>
+  <link rel="stylesheet" href="css/style.css?v=6">
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
+      "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"
+    }
+  }
+  </script>
+</head>
+<body>
+  <canvas id="noise-bg"></canvas>
+
+  <nav id="nav">
+    <a href="index.html" class="logo">
+      <canvas id="hero-title-canvas"></canvas>
+    </a>
+    <div class="nav-links">
+      <a href="index.html" class="active">Work</a>
+      <a href="experiments.html">Explorations</a>
+      <a href="network/">Network</a>
+    </div>
+  </nav>
+
+  <main>
+    <!-- Hero / Demo Reel -->
+    <section id="hero">
+      <div class="reel-container">
+        <div style="padding:56.25% 0 0 0;position:relative;">
+          <iframe src="https://player.vimeo.com/video/1159040921?h=1c95f3a31e&autoplay=1&loop=1&muted=1&title=0&byline=0&portrait=0"
+            style="position:absolute;top:0;left:0;width:100%;height:100%;"
+            frameborder="0" allow="autoplay; fullscreen; picture-in-picture" allowfullscreen></iframe>
+        </div>
+      </div>
+      <h2 class="hero-tagline">We make things people actually like.</h2>
+    </section>
+
+    <!-- About -->
+    <section id="about">
+      <div class="about-intro">
+        <p>Amalgamation is the connective tissue between the world's most elite artists and the most ambitious creative projects. Bespoke visual development, high-velocity production, and technical innovation.</p>
+      </div>
+    </section>
+
+    <!-- Work Grid -->
+    <section id="work">
+      <div class="work-grid">
+        <!-- Row 1: pos 1=AM(text), 2=clip, 3=clip, 4=AL(text) -->
+        <div class="work-letter" style="--letter-x:-15%;--letter-y:10%"><span>AM</span></div>
+        <div class="work-item"><video autoplay loop muted playsinline><source src="assets/gifs/helicopter.mp4" type="video/mp4"></video></div>
+        <div class="work-item"><video autoplay loop muted playsinline><source src="assets/gifs/turbulence.mp4" type="video/mp4"></video></div>
+        <div class="work-letter" style="--letter-x:15%;--letter-y:10%"><span>AL</span></div>
+
+        <!-- Row 2: pos 5=clip, 6=clip, 7=GA(text), 8=clip -->
+        <div class="work-item"><video autoplay loop muted playsinline><source src="assets/gifs/juice-dust.mp4" type="video/mp4"></video></div>
+        <div class="work-item"><video autoplay loop muted playsinline><source src="assets/gifs/space-dust.mp4" type="video/mp4"></video></div>
+        <div class="work-letter" style="--letter-x:-10%;--letter-y:5%"><span>GA</span></div>
+        <div class="work-item"><video autoplay loop muted playsinline><source src="assets/gifs/egg.mp4" type="video/mp4"></video></div>
+
+        <!-- Row 3: pos 9=clip, 10=MA(text), 11=clip, 12=clip -->
+        <div class="work-item"><video autoplay loop muted playsinline><source src="assets/gifs/spriteverse.mp4" type="video/mp4"></video></div>
+        <div class="work-letter" style="--letter-x:10%;--letter-y:-5%"><span>MA</span></div>
+        <div class="work-item"><video autoplay loop muted playsinline><source src="assets/gifs/small-talk.mp4" type="video/mp4"></video></div>
+        <div class="work-item"><video autoplay loop muted playsinline><source src="assets/gifs/selfcheckout.mp4" type="video/mp4"></video></div>
+
+        <!-- Row 4: pos 13=TI(text), 14=clip, 15=clip, 16=ON(text) -->
+        <div class="work-letter" style="--letter-x:-15%;--letter-y:-10%"><span>TI</span></div>
+        <div class="work-item"><video autoplay loop muted playsinline><source src="assets/gifs/colorful-sculpture.mp4" type="video/mp4"></video></div>
+        <div class="work-item"><video autoplay loop muted playsinline><source src="assets/gifs/likearabbit.mp4" type="video/mp4"></video></div>
+        <div class="work-letter" style="--letter-x:15%;--letter-y:-10%"><span>ON</span></div>
+      </div>
+    </section>
+
+    <!-- Team -->
+    <section id="team">
+      <h2 class="section-title">The Team</h2>
+      <div class="team-grid">
+        <div class="team-member chris-card">
+          <video class="chris-bg-video" autoplay loop muted playsinline>
+            <source src="assets/chris-splat.mp4" type="video/mp4">
+          </video>
+          <div class="chris-card-content">
+            <h3>Christopher Rutledge</h3>
+            <span class="role">Head of Creative & Technology</span>
+            <p>Known as the "Animation Mayor," Christopher specializes in designing bespoke pipelines that bridge experimental VFX and industrial-grade production. From engineering new visual languages for Apple and Nike to developing feature-level pilots for Netflix, his approach is always holistic.</p>
+          </div>
+        </div>
+        <div class="team-member">
+          <div class="member-photo">
+            <img src="assets/bengloger.jpeg" alt="Ben Gloger">
+          </div>
+          <h3>Ben Gloger</h3>
+          <span class="role">Head of Business Strategy</span>
+          <p>Ben brings rigorous business perspective to the world of animation. With a background in law, venture capital, and business development, he operates at the intersection of creative vision and strategic growth.</p>
+        </div>
+        <div class="team-member">
+          <div class="member-photo">
+            <img src="assets/michaelgentile.jpeg" alt="Mike Gentile">
+          </div>
+          <h3>Mike Gentile</h3>
+          <span class="role">Head of Brand Strategy</span>
+          <p>A relentless enabler of creative with 15+ years in advertising, Mike builds the bridge between brands and culture. From launching brand campaigns with Rivian to dissecting cultural relevance through his Brand Breaker series, he turns strategic thinking into work people remember.</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- Stats -->
+    <section id="stats">
+      <div class="stats-grid">
+        <div class="stat">
+          <span class="stat-number">100M+</span>
+          <span class="stat-label">Social Impressions</span>
+        </div>
+        <div class="stat">
+          <span class="stat-number">12+</span>
+          <span class="stat-label">Major Festival Selections</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- Network Preview -->
+    <section id="network">
+      <a href="network/" class="network-preview">
+        <h2 class="section-title">The Network</h2>
+        <div class="network-preview-embed">
+          <iframe src="network/?embed=1" scrolling="no" tabindex="-1"></iframe>
+          <div class="network-preview-overlay"></div>
+        </div>
+      </a>
+    </section>
+
+    <section id="footer-logo">
+      <canvas id="footer-hero-canvas"></canvas>
+    </section>
+
+    <footer>
+      <p>Amalgamation &copy; 2026</p>
+    </footer>
+  </main>
+
+  <script src="https://player.vimeo.com/api/player.js"></script>
+  <script src="js/noise.js"></script>
+  <script src="js/main.js"></script>
+  <script src="js/grid-text-animate.js"></script>
+  <script type="module">
+    import { initHeroTitle } from './js/hero-title.js';
+    const canvas = document.getElementById('hero-title-canvas');
+    if (canvas) initHeroTitle(canvas, 'assets/hero.glb');
+    const footerCanvas = document.getElementById('footer-hero-canvas');
+    if (footerCanvas) initHeroTitle(footerCanvas, 'assets/hero.glb');
+  </script>
+</body>
+</html>
