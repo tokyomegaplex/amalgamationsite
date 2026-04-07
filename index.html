@@ -4,6 +4,9 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Amalgamation</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@700&family=Space+Mono:wght@700&family=Bebas+Neue&family=Caveat:wght@700&family=Press+Start+2P&family=Righteous&family=Permanent+Marker&family=Abril+Fatface&family=Lobster&family=Orbitron:wght@700&family=Pacifico&family=Rubik+Mono+One&display=swap" rel="stylesheet">
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
 
@@ -87,11 +90,45 @@
   #transform-box .handle.bl { bottom: -4px; left: -4px; }
   #transform-box .handle.bc { bottom: -4px; left: calc(50% - 4px); }
   #transform-box .handle.br { bottom: -4px; right: -4px; }
+
+  /* --- Font dropdown --- */
+  #font-dropdown {
+    position: fixed;
+    pointer-events: none;
+    z-index: 9998;
+    display: none;
+    background: #2a2a2a;
+    border: 1px solid #555;
+    border-radius: 4px;
+    padding: 2px 0;
+    min-width: 180px;
+    box-shadow: 0 4px 16px rgba(0,0,0,0.5);
+  }
+  #font-dropdown.visible { display: block; }
+
+  #font-dropdown .font-option {
+    padding: 5px 12px;
+    color: #ccc;
+    font-size: 14px;
+    white-space: nowrap;
+    transition: background 0.05s;
+  }
+  #font-dropdown .font-option.hovered {
+    background: #3a6abf;
+    color: #fff;
+  }
+
+  /* I-beam cursor for text cursor */
+  #cursor.text-cursor .arrow { display: none; }
+  #cursor.text-cursor .ibeam { display: block; }
 </style>
 </head>
 <body>
 
 <div class="text-container" id="container"></div>
+
+<!-- Font picker dropdown -->
+<div id="font-dropdown"></div>
 
 <!-- Transform bounding box overlay -->
 <div id="transform-box">
@@ -130,6 +167,22 @@
       <rect x="12" y="8"  width="3" height="7" rx="1.5"/>
       <rect x="16" y="9"  width="3" height="6" rx="1.5"/>
       <rect x="20" y="10" width="3" height="5" rx="1.5"/>
+    </g>
+  </svg>
+  <!-- I-beam (text select) -->
+  <svg class="ibeam" width="24" height="24" viewBox="0 0 24 24" fill="none">
+    <g stroke="#fff" stroke-width="2" stroke-linecap="round">
+      <line x1="12" y1="4" x2="12" y2="20"/>
+      <line x1="9" y1="4" x2="15" y2="4"/>
+      <line x1="9" y1="20" x2="15" y2="20"/>
+    </g>
+    <g stroke="#000" stroke-width="3.5" stroke-linecap="round" opacity="0.3">
+      <line x1="12" y1="4" x2="12" y2="20"/>
+    </g>
+    <g stroke="#fff" stroke-width="2" stroke-linecap="round">
+      <line x1="12" y1="4" x2="12" y2="20"/>
+      <line x1="9" y1="4" x2="15" y2="4"/>
+      <line x1="9" y1="20" x2="15" y2="20"/>
     </g>
   </svg>
   <!-- Resize NWSE (top-left / bottom-right diagonal) -->
@@ -325,6 +378,67 @@ function hideTransformBox() {
   transformBox.classList.remove('visible');
 }
 
+// ==================== FONT DROPDOWN ====================
+const FONTS = [
+  { name: 'Courier New',       css: "'Courier New', Courier, monospace" },
+  { name: 'Playfair Display',  css: "'Playfair Display', serif" },
+  { name: 'Space Mono',        css: "'Space Mono', monospace" },
+  { name: 'Bebas Neue',        css: "'Bebas Neue', sans-serif" },
+  { name: 'Caveat',            css: "'Caveat', cursive" },
+  { name: 'Press Start 2P',    css: "'Press Start 2P', monospace" },
+  { name: 'Righteous',         css: "'Righteous', sans-serif" },
+  { name: 'Permanent Marker',  css: "'Permanent Marker', cursive" },
+  { name: 'Abril Fatface',     css: "'Abril Fatface', serif" },
+  { name: 'Lobster',           css: "'Lobster', cursive" },
+  { name: 'Orbitron',          css: "'Orbitron', sans-serif" },
+  { name: 'Pacifico',          css: "'Pacifico', cursive" },
+  { name: 'Rubik Mono One',    css: "'Rubik Mono One', monospace" },
+];
+
+const fontDropdown = document.getElementById("font-dropdown");
+let fontOptionEls = [];
+
+function buildDropdownOptions(excludeFont) {
+  // Pick 5-7 random fonts to show (always include a few, exclude current)
+  const available = FONTS.filter(f => f.name !== excludeFont);
+  const shuffled = available.sort(() => Math.random() - 0.5);
+  const count = Math.floor(randomRange(5, 8));
+  const chosen = shuffled.slice(0, count);
+
+  fontDropdown.innerHTML = '';
+  fontOptionEls = [];
+  chosen.forEach(f => {
+    const div = document.createElement('div');
+    div.className = 'font-option';
+    div.textContent = f.name;
+    div.style.fontFamily = f.css;
+    div.dataset.fontCss = f.css;
+    div.dataset.fontName = f.name;
+    fontDropdown.appendChild(div);
+    fontOptionEls.push(div);
+  });
+}
+
+function showFontDropdown(x, y) {
+  fontDropdown.style.left = x + 'px';
+  fontDropdown.style.top = y + 'px';
+  fontDropdown.classList.add('visible');
+}
+
+function hideFontDropdown() {
+  fontDropdown.classList.remove('visible');
+  fontOptionEls.forEach(el => el.classList.remove('hovered'));
+}
+
+function highlightFontOption(index) {
+  fontOptionEls.forEach((el, i) => {
+    el.classList.toggle('hovered', i === index);
+  });
+}
+
+// Track current font per pair
+const pairFonts = elements.map(() => "'Courier New', Courier, monospace");
+
 // ==================== STATE MACHINE ====================
 const cursor = {
   x: window.innerWidth / 2,
@@ -352,6 +466,8 @@ const cursor = {
   // sign of (handle - anchor) per axis at drag start
   signX: 1,
   signY: 1,
+  // font-change specific
+  selectedFontIndex: 0,
 };
 
 function pickNextTarget() {
@@ -374,22 +490,26 @@ function startIdle() {
   cursor.idleTimer = randomRange(80, 350);
   cursorEl.className = '';
   hideTransformBox();
+  hideFontDropdown();
 }
 
 function startMoveToTarget() {
   cursor.targetPair = pickNextTarget();
-  // Decide action type: ~40% transform, ~60% drag
-  cursor.actionType = Math.random() < 0.4 ? 'transform' : 'drag';
+  // Decide action type: ~35% transform, ~40% drag, ~25% fontChange
+  const roll = Math.random();
+  cursor.actionType = roll < 0.35 ? 'transform' : roll < 0.75 ? 'drag' : 'fontChange';
 
   let aimX, aimY;
+  const center = getPairCenter(cursor.targetPair);
 
   if (cursor.actionType === 'drag') {
-    const center = getPairCenter(cursor.targetPair);
     aimX = center.x + randomRange(-10, 10);
     aimY = center.y + randomRange(-8, 8);
+  } else if (cursor.actionType === 'fontChange') {
+    // Move to the text (we'll right-click / click on it)
+    aimX = center.x + randomRange(-5, 15);
+    aimY = center.y + randomRange(-5, 5);
   } else {
-    // For transform: move to the pair center first (we'll move to handle after)
-    const center = getPairCenter(cursor.targetPair);
     aimX = center.x + randomRange(-5, 5);
     aimY = center.y + randomRange(-5, 5);
   }
@@ -405,7 +525,12 @@ function startMoveToTarget() {
 function startHover() {
   cursor.phase = 'hover';
   cursor.hoverTimer = randomRange(80, 250);
-  cursorEl.className = 'grab';
+
+  if (cursor.actionType === 'fontChange') {
+    cursorEl.className = 'text-cursor';
+  } else {
+    cursorEl.className = 'grab';
+  }
 
   if (cursor.actionType === 'transform') {
     showTransformBox(cursor.targetPair);
@@ -541,6 +666,72 @@ function startTransformRelease() {
   cursorEl.className = '';
 }
 
+// --- FONT CHANGE PHASES ---
+
+function startFontClick() {
+  // "Click" on the pair — brief pause as if clicking
+  cursor.phase = 'fontClick';
+  cursor.hoverTimer = randomRange(60, 150);
+  cursorEl.className = 'text-cursor';
+  // Highlight the pair
+  elements[cursor.targetPair].classList.add('grabbed');
+}
+
+function startFontDropdownShow() {
+  cursor.phase = 'fontDropdownShow';
+  cursor.hoverTimer = randomRange(150, 350);
+  cursorEl.className = '';
+  // Build and show the dropdown near the cursor
+  const currentFontName = FONTS.find(f => f.css === pairFonts[cursor.targetPair])?.name || '';
+  buildDropdownOptions(currentFontName);
+  showFontDropdown(cursor.x + 8, cursor.y + 8);
+}
+
+function startMoveToFontOption() {
+  // Pick a random option from the dropdown
+  cursor.selectedFontIndex = Math.floor(Math.random() * fontOptionEls.length);
+  const optionEl = fontOptionEls[cursor.selectedFontIndex];
+  const rect = optionEl.getBoundingClientRect();
+  const aimX = rect.left + randomRange(20, rect.width - 10);
+  const aimY = rect.top + rect.height / 2 + randomRange(-2, 2);
+  const dist = Math.sqrt((aimX - cursor.x) ** 2 + (aimY - cursor.y) ** 2);
+  cursor.path = generateMousePath(cursor.x, cursor.y, aimX, aimY, 40);
+  cursor.pathStartTime = performance.now();
+  cursor.pathDuration = getMoveDuration(dist) * 1.5; // slower, deliberate
+  cursor.phase = 'moveToFontOption';
+  cursorEl.className = '';
+}
+
+function startFontOptionClick() {
+  cursor.phase = 'fontOptionClick';
+  cursor.hoverTimer = randomRange(80, 180);
+  // Apply the font
+  const optionEl = fontOptionEls[cursor.selectedFontIndex];
+  const newFontCss = optionEl.dataset.fontCss;
+  const newFontName = optionEl.dataset.fontName;
+  pairFonts[cursor.targetPair] = newFontCss;
+  elements[cursor.targetPair].style.fontFamily = newFontCss;
+  // Recalculate natural dimensions since font changed
+  const ps = pairState[cursor.targetPair];
+  // Temporarily reset scale to measure natural size
+  const oldTransform = elements[cursor.targetPair].style.transform;
+  elements[cursor.targetPair].style.transform = `translate(${ps.x.toFixed(2)}px, ${ps.y.toFixed(2)}px) scale(1, 1)`;
+  // Force reflow
+  const r = elements[cursor.targetPair].getBoundingClientRect();
+  ps.naturalHW = r.width / 2;
+  ps.naturalHH = r.height / 2;
+  // Restore transform
+  elements[cursor.targetPair].style.transform = oldTransform;
+}
+
+function startFontDismiss() {
+  cursor.phase = 'fontDismiss';
+  cursor.hoverTimer = randomRange(80, 200);
+  hideFontDropdown();
+  elements[cursor.targetPair].classList.remove('grabbed');
+  cursorEl.className = '';
+}
+
 // ==================== ANIMATION LOOP ====================
 let lastTime = performance.now();
 startIdle();
@@ -566,6 +757,8 @@ function animate(now) {
       if (cursor.hoverTimer <= 0) {
         if (cursor.actionType === 'transform') {
           startMoveToHandle();
+        } else if (cursor.actionType === 'fontChange') {
+          startFontClick();
         } else {
           startGrab();
         }
@@ -640,6 +833,49 @@ function animate(now) {
       cursor.hoverTimer -= dt;
       cursor.x += handTremor(now * 0.01, 88) * 0.1;
       cursor.y += handTremor(now * 0.01, 44) * 0.1;
+      if (cursor.hoverTimer <= 0) startIdle();
+      break;
+
+    // --- FONT CHANGE PATH ---
+    case 'fontClick':
+      cursor.hoverTimer -= dt;
+      if (cursor.hoverTimer <= 0) startFontDropdownShow();
+      break;
+
+    case 'fontDropdownShow':
+      cursor.hoverTimer -= dt;
+      cursor.x += handTremor(now * 0.01, 22) * 0.08;
+      cursor.y += handTremor(now * 0.01, 11) * 0.08;
+      if (cursor.hoverTimer <= 0) startMoveToFontOption();
+      break;
+
+    case 'moveToFontOption': {
+      const t = followPath(cursor, now);
+      // Highlight whichever option the cursor is nearest
+      const cy = cursor.y;
+      let closest = 0;
+      let closestDist = Infinity;
+      fontOptionEls.forEach((el, i) => {
+        const rect = el.getBoundingClientRect();
+        const mid = rect.top + rect.height / 2;
+        const d = Math.abs(cy - mid);
+        if (d < closestDist) { closestDist = d; closest = i; }
+      });
+      highlightFontOption(closest);
+      if (t >= 1) {
+        highlightFontOption(cursor.selectedFontIndex);
+        startFontOptionClick();
+      }
+      break;
+    }
+
+    case 'fontOptionClick':
+      cursor.hoverTimer -= dt;
+      if (cursor.hoverTimer <= 0) startFontDismiss();
+      break;
+
+    case 'fontDismiss':
+      cursor.hoverTimer -= dt;
       if (cursor.hoverTimer <= 0) startIdle();
       break;
   }
