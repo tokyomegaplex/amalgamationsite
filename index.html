@@ -465,7 +465,7 @@ function updateTransformBoxPosition(pairIndex) {
   transformBox.style.width  = b.width + 'px';
   transformBox.style.height = b.height + 'px';
   transformBox.style.transformOrigin = 'center center';
-  transformBox.style.transform = `rotate(${ps.rotation.toFixed(4)}rad)`;
+  transformBox.style.transform = `rotate(${ps.rotation.toFixed(4)}rad) skew(${ps.skewX.toFixed(4)}rad, ${ps.skewY.toFixed(4)}rad)`;
 }
 
 function showTransformBox(pairIndex) {
@@ -474,6 +474,8 @@ function showTransformBox(pairIndex) {
 }
 
 function hideTransformBox() {
+  // Don't hide if the user has an active selection
+  if (transformBox.classList.contains('user-active')) return;
   transformBox.classList.remove('visible');
 }
 
@@ -628,6 +630,10 @@ function duplicatePair(srcIndex, offsetX, offsetY) {
     clipboard.pairIndex = newIndex;
     showContextMenu(e.clientX, e.clientY);
     contextMenu.style.pointerEvents = 'auto';
+    contextMenu.querySelectorAll('.menu-item').forEach(mi => {
+      mi.style.opacity = '1';
+      mi.style.pointerEvents = 'auto';
+    });
   });
 
   return newIndex;
@@ -1596,15 +1602,29 @@ const user = {
   startAngle: 0,
   anchorX: 0, anchorY: 0,
   signX: 1, signY: 1,
+  inactivityTimeout: null,
 };
 
+function resetUserInactivityTimer() {
+  if (user.inactivityTimeout) clearTimeout(user.inactivityTimeout);
+  if (user.selectedPair >= 0) {
+    user.inactivityTimeout = setTimeout(() => {
+      userDeselectPair();
+    }, 5000);
+  }
+}
+
 function userSelectPair(index) {
+  if (user.inactivityTimeout) clearTimeout(user.inactivityTimeout);
   user.selectedPair = index;
   transformBox.classList.add('visible', 'user-active');
   updateTransformBoxPosition(index);
+  resetUserInactivityTimer();
 }
 
 function userDeselectPair() {
+  if (user.inactivityTimeout) clearTimeout(user.inactivityTimeout);
+  user.inactivityTimeout = null;
   user.selectedPair = -1;
   transformBox.classList.remove('user-active');
   // Only hide if the automated cursor isn't using it
@@ -1612,7 +1632,7 @@ function userDeselectPair() {
         'moveToRotateHandle','rotateHover','rotateGrab','rotateDrag','rotateRelease',
         'moveToSkewHandle','skewHover','skewGrab','skewDrag','skewRelease']
       .includes(cursor.phase)) {
-    hideTransformBox();
+    transformBox.classList.remove('visible');
   }
 }
 
@@ -1779,6 +1799,7 @@ document.addEventListener('mousemove', (e) => {
 document.addEventListener('mouseup', () => {
   user.dragging = false;
   user.mode = 'none';
+  resetUserInactivityTimer();
 });
 
 // Click on background to deselect
@@ -1807,6 +1828,11 @@ elements.forEach((el, i) => {
     clipboard.pairIndex = i;
     showContextMenu(e.clientX, e.clientY);
     contextMenu.style.pointerEvents = 'auto';
+    // Restore all items to fully active
+    contextMenu.querySelectorAll('.menu-item').forEach(mi => {
+      mi.style.opacity = '1';
+      mi.style.pointerEvents = 'auto';
+    });
   });
 });
 
@@ -1822,11 +1848,11 @@ contextMenu.querySelectorAll('.menu-item').forEach(item => {
       contextMenu.style.pointerEvents = 'none';
     } else if (action === 'paste') {
       if (clipboard.pairIndex >= 0) {
-        // Paste at the menu position with a small offset
+        // Paste near where the context menu was opened
         const menuRect = contextMenu.getBoundingClientRect();
         const srcCenter = getPairCenter(clipboard.pairIndex);
-        const offsetX = menuRect.left - srcCenter.x + randomRange(10, 30);
-        const offsetY = menuRect.top - srcCenter.y + randomRange(10, 30);
+        const offsetX = menuRect.left - srcCenter.x;
+        const offsetY = menuRect.top - srcCenter.y;
         duplicatePair(clipboard.pairIndex, offsetX, offsetY);
       }
       hideContextMenu();
@@ -1851,11 +1877,31 @@ document.addEventListener('mousedown', (e) => {
   }
 });
 
-// Prevent default context menu on the page
+// Right-click anywhere — show paste menu if clipboard has content
 document.addEventListener('contextmenu', (e) => {
-  // Only prevent if clicking on a letter pair (allow default elsewhere)
   if (e.target.classList.contains('letter-pair')) {
+    // Handled by the per-element contextmenu listener
+    return;
+  }
+  if (e.target.classList.contains('menu-item')) {
     e.preventDefault();
+    return;
+  }
+  // Right-click on background: show paste-only menu if we have something copied
+  if (clipboard.pairIndex >= 0) {
+    e.preventDefault();
+    showContextMenu(e.clientX, e.clientY);
+    contextMenu.style.pointerEvents = 'auto';
+    // Grey out Copy since nothing is targeted, highlight Paste availability
+    contextMenu.querySelectorAll('.menu-item').forEach(el => {
+      if (el.dataset.action === 'copy') {
+        el.style.opacity = '0.4';
+        el.style.pointerEvents = 'none';
+      } else {
+        el.style.opacity = '1';
+        el.style.pointerEvents = 'auto';
+      }
+    });
   }
 });
 </script>
