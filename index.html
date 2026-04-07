@@ -23,6 +23,7 @@
 
   .text-container {
     display: flex;
+    align-items: flex-end;
     position: relative;
     user-select: none;
   }
@@ -702,26 +703,32 @@ function startMoveToFontOption() {
   cursorEl.className = '';
 }
 
+function recalcNaturalDims(pairIndex) {
+  const el = elements[pairIndex];
+  const ps = pairState[pairIndex];
+  // Temporarily reset to scale(1,1) with no translation to measure natural size + position
+  el.style.transform = 'translate(0px, 0px) scale(1, 1)';
+  // Force reflow
+  const r = el.getBoundingClientRect();
+  ps.naturalHW = r.width / 2;
+  ps.naturalHH = r.height / 2;
+  ps.baseCenterX = r.left + r.width / 2;
+  ps.baseCenterY = r.top + r.height / 2;
+  // Restore actual transform
+  el.style.transform = `translate(${ps.x.toFixed(2)}px, ${ps.y.toFixed(2)}px) scale(${ps.scaleX.toFixed(4)}, ${ps.scaleY.toFixed(4)})`;
+}
+
 function startFontOptionClick() {
   cursor.phase = 'fontOptionClick';
   cursor.hoverTimer = randomRange(80, 180);
   // Apply the font
   const optionEl = fontOptionEls[cursor.selectedFontIndex];
   const newFontCss = optionEl.dataset.fontCss;
-  const newFontName = optionEl.dataset.fontName;
   pairFonts[cursor.targetPair] = newFontCss;
   elements[cursor.targetPair].style.fontFamily = newFontCss;
-  // Recalculate natural dimensions since font changed
-  const ps = pairState[cursor.targetPair];
-  // Temporarily reset scale to measure natural size
-  const oldTransform = elements[cursor.targetPair].style.transform;
-  elements[cursor.targetPair].style.transform = `translate(${ps.x.toFixed(2)}px, ${ps.y.toFixed(2)}px) scale(1, 1)`;
-  // Force reflow
-  const r = elements[cursor.targetPair].getBoundingClientRect();
-  ps.naturalHW = r.width / 2;
-  ps.naturalHH = r.height / 2;
-  // Restore transform
-  elements[cursor.targetPair].style.transform = oldTransform;
+  // Recalculate natural dimensions + base position since font changed
+  // (font change affects element size AND position due to flex-end alignment)
+  recalcNaturalDims(cursor.targetPair);
 }
 
 function startFontDismiss() {
