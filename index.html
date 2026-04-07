@@ -1102,8 +1102,8 @@ function animate(now) {
 // Pass 2: blit to display canvas with nearest-neighbor upscale
 const pixelCanvas = document.getElementById('pixel-canvas');
 const pixCtx = pixelCanvas.getContext('2d');
-const PIXEL_SCALE = 0.5; // final display scale (2x pixel size)
-const RENDER_SCALE = 0.18; // render text at this scale first (very low res to kill AA)
+const PIXEL_SCALE = 0.75; // final display scale
+const RENDER_SCALE = 0.35; // render text at this scale first (low res to kill AA)
 
 // Offscreen tiny canvas for pass 1
 const offscreen = document.createElement('canvas');
