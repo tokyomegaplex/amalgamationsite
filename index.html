@@ -1097,10 +1097,17 @@ function animate(now) {
   requestAnimationFrame(animate);
 }
 
-// Pixelation: render the DOM text into a low-res canvas, display upscaled
+// Pixelation: two-pass for hard no-AA jaggies
+// Pass 1: render text at very low res (tiny offscreen canvas)
+// Pass 2: blit to display canvas with nearest-neighbor upscale
 const pixelCanvas = document.getElementById('pixel-canvas');
 const pixCtx = pixelCanvas.getContext('2d');
-const PIXEL_SCALE = 0.5; // render at 50% res = ~2x pixel size
+const PIXEL_SCALE = 0.5; // final display scale (2x pixel size)
+const RENDER_SCALE = 0.18; // render text at this scale first (very low res to kill AA)
+
+// Offscreen tiny canvas for pass 1
+const offscreen = document.createElement('canvas');
+const offCtx = offscreen.getContext('2d');
 
 function setupPixelCanvas() {
   pixelCanvas.width = Math.floor(window.innerWidth * PIXEL_SCALE);
@@ -1108,37 +1115,48 @@ function setupPixelCanvas() {
   pixelCanvas.style.width = window.innerWidth + 'px';
   pixelCanvas.style.height = window.innerHeight + 'px';
   pixCtx.imageSmoothingEnabled = false;
+
+  offscreen.width = Math.floor(window.innerWidth * RENDER_SCALE);
+  offscreen.height = Math.floor(window.innerHeight * RENDER_SCALE);
+  offCtx.imageSmoothingEnabled = false;
 }
 setupPixelCanvas();
 window.addEventListener('resize', setupPixelCanvas);
 
 function renderPixelated() {
-  const w = pixelCanvas.width;
-  const h = pixelCanvas.height;
-  pixCtx.clearRect(0, 0, w, h);
-  pixCtx.save();
-  pixCtx.scale(PIXEL_SCALE, PIXEL_SCALE);
+  // Pass 1: render text at very low res
+  const ow = offscreen.width;
+  const oh = offscreen.height;
+  offCtx.clearRect(0, 0, ow, oh);
+  offCtx.save();
+  offCtx.scale(RENDER_SCALE, RENDER_SCALE);
 
   elements.forEach((el, i) => {
     const ps = pairState[i];
     const cx = ps.baseCenterX + ps.x;
     const cy = ps.baseCenterY + ps.y;
 
-    pixCtx.save();
-    pixCtx.translate(cx, cy);
-    pixCtx.rotate(ps.rotation);
-    pixCtx.scale(ps.scaleX, ps.scaleY);
+    offCtx.save();
+    offCtx.translate(cx, cy);
+    offCtx.rotate(ps.rotation);
+    offCtx.scale(ps.scaleX, ps.scaleY);
 
-    // Use computed style for accurate font size (cached per pair in pairFonts)
-    pixCtx.font = `700 ${getComputedStyle(el).fontSize} ${pairFonts[i]}`;
-    pixCtx.fillStyle = '#e0e0e0';
-    pixCtx.textAlign = 'center';
-    pixCtx.textBaseline = 'middle';
-    pixCtx.fillText(el.textContent, 0, 0);
-    pixCtx.restore();
+    offCtx.font = `700 ${getComputedStyle(el).fontSize} ${pairFonts[i]}`;
+    offCtx.fillStyle = '#e0e0e0';
+    offCtx.textAlign = 'center';
+    offCtx.textBaseline = 'middle';
+    offCtx.fillText(el.textContent, 0, 0);
+    offCtx.restore();
   });
 
-  pixCtx.restore();
+  offCtx.restore();
+
+  // Pass 2: blit tiny canvas up to display canvas (nearest-neighbor)
+  const pw = pixelCanvas.width;
+  const ph = pixelCanvas.height;
+  pixCtx.clearRect(0, 0, pw, ph);
+  pixCtx.imageSmoothingEnabled = false;
+  pixCtx.drawImage(offscreen, 0, 0, pw, ph);
 }
 
 requestAnimationFrame(animate);
