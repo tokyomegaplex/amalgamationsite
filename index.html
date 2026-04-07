@@ -105,6 +105,47 @@
   #transform-box .rotate-zone.rtr { top: -20px; right: -20px; }
   #transform-box .rotate-zone.rbl { bottom: -20px; left: -20px; }
   #transform-box .rotate-zone.rbr { bottom: -20px; right: -20px; }
+
+  /* Shear zones — edges between handles */
+  #transform-box .shear-zone {
+    position: absolute;
+    pointer-events: auto;
+  }
+  #transform-box .shear-zone.st { top: -6px; left: 20px; right: 20px; height: 12px; cursor: ew-resize; }
+  #transform-box .shear-zone.sb { bottom: -6px; left: 20px; right: 20px; height: 12px; cursor: ew-resize; }
+  #transform-box .shear-zone.sl { left: -6px; top: 20px; bottom: 20px; width: 12px; cursor: ns-resize; }
+  #transform-box .shear-zone.sr { right: -6px; top: 20px; bottom: 20px; width: 12px; cursor: ns-resize; }
+
+  /* --- Context menu --- */
+  #context-menu {
+    position: fixed;
+    display: none;
+    background: #2a2a2a;
+    border: 1px solid #555;
+    border-radius: 4px;
+    padding: 2px 0;
+    min-width: 120px;
+    box-shadow: 0 4px 16px rgba(0,0,0,0.5);
+    z-index: 10000;
+    pointer-events: none;
+  }
+  #context-menu.visible { display: block; }
+  #context-menu .menu-item {
+    padding: 6px 16px;
+    color: #ccc;
+    font-size: 13px;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    white-space: nowrap;
+  }
+  #context-menu .menu-item.hovered {
+    background: #3a6abf;
+    color: #fff;
+  }
+  #context-menu .menu-separator {
+    height: 1px;
+    background: #444;
+    margin: 2px 0;
+  }
   /* corners */
   #transform-box .handle.tl { top: -6px; left: -6px; }
   #transform-box .handle.tc { top: -6px; left: calc(50% - 6px); }
@@ -173,6 +214,17 @@
   <div class="rotate-zone rtr" data-corner="tr"></div>
   <div class="rotate-zone rbl" data-corner="bl"></div>
   <div class="rotate-zone rbr" data-corner="br"></div>
+  <div class="shear-zone st" data-edge="top"></div>
+  <div class="shear-zone sb" data-edge="bottom"></div>
+  <div class="shear-zone sl" data-edge="left"></div>
+  <div class="shear-zone sr" data-edge="right"></div>
+</div>
+
+<!-- Context menu for copy/paste -->
+<div id="context-menu">
+  <div class="menu-item" data-action="copy">Copy</div>
+  <div class="menu-separator"></div>
+  <div class="menu-item" data-action="paste">Paste</div>
 </div>
 
 <!-- Fake cursor element -->
@@ -489,6 +541,98 @@ function highlightFontOption(index) {
 // Track current font per pair
 const pairFonts = elements.map(() => "'Courier New', Courier, monospace");
 
+// ==================== CONTEXT MENU & CLIPBOARD ====================
+const contextMenu = document.getElementById('context-menu');
+const clipboard = { pairIndex: -1 }; // which pair was "copied"
+
+function showContextMenu(x, y) {
+  contextMenu.style.left = Math.min(x, window.innerWidth - 140) + 'px';
+  contextMenu.style.top = Math.min(y, window.innerHeight - 80) + 'px';
+  contextMenu.classList.add('visible');
+}
+
+function hideContextMenu() {
+  contextMenu.classList.remove('visible');
+  contextMenu.querySelectorAll('.menu-item').forEach(el => el.classList.remove('hovered'));
+}
+
+function highlightMenuItem(actionName) {
+  contextMenu.querySelectorAll('.menu-item').forEach(el => {
+    el.classList.toggle('hovered', el.dataset.action === actionName);
+  });
+}
+
+function duplicatePair(srcIndex, offsetX, offsetY) {
+  // Create a visual copy of the source pair at an offset position
+  const srcEl = elements[srcIndex];
+  const srcPs = pairState[srcIndex];
+  const span = document.createElement('span');
+  span.className = 'letter-pair';
+  span.textContent = srcEl.textContent;
+  span.style.fontFamily = pairFonts[srcIndex];
+  container.appendChild(span);
+
+  // Measure the new element's natural position
+  const oldTransforms = elements.map((el, i) => el.style.transform);
+  elements.forEach(el => { el.style.transform = 'translate(0px, 0px) scale(1, 1)'; });
+  span.style.transform = 'translate(0px, 0px) scale(1, 1)';
+
+  const r = span.getBoundingClientRect();
+  const newPs = {
+    x: 0, y: 0,
+    scaleX: srcPs.scaleX, scaleY: srcPs.scaleY,
+    rotation: srcPs.rotation,
+    skewX: srcPs.skewX, skewY: srcPs.skewY,
+    naturalHW: r.width / 2,
+    naturalHH: r.height / 2,
+    baseCenterX: r.left + r.width / 2,
+    baseCenterY: r.top + r.height / 2,
+  };
+
+  // Position the copy at the desired screen position
+  const srcScreenX = srcPs.baseCenterX + srcPs.x;
+  const srcScreenY = srcPs.baseCenterY + srcPs.y;
+  newPs.x = (srcScreenX + offsetX) - newPs.baseCenterX;
+  newPs.y = (srcScreenY + offsetY) - newPs.baseCenterY;
+
+  elements.push(span);
+  pairState.push(newPs);
+  pairFonts.push(pairFonts[srcIndex]);
+
+  // Restore all existing transforms
+  elements.forEach((el, i) => {
+    if (i < oldTransforms.length) {
+      el.style.transform = oldTransforms[i];
+    }
+  });
+
+  // Recalc to account for flex layout shift from adding a new element
+  recalcAllNaturalDims();
+
+  // Add user interaction to the new element
+  const newIndex = elements.length - 1;
+  span.addEventListener('mousedown', (e) => {
+    if (e.button === 2) return; // right-click handled separately
+    e.preventDefault();
+    userSelectPair(newIndex);
+    user.dragging = true;
+    user.mode = 'move';
+    user.startX = e.clientX;
+    user.startY = e.clientY;
+    user.startPairX = pairState[newIndex].x;
+    user.startPairY = pairState[newIndex].y;
+  });
+  span.addEventListener('contextmenu', (e) => {
+    e.preventDefault();
+    userSelectPair(newIndex);
+    clipboard.pairIndex = newIndex;
+    showContextMenu(e.clientX, e.clientY);
+    contextMenu.style.pointerEvents = 'auto';
+  });
+
+  return newIndex;
+}
+
 // ==================== STATE MACHINE ====================
 const cursor = {
   x: window.innerWidth / 2,
@@ -525,6 +669,10 @@ const cursor = {
   startSkewX: 0,
   startSkewY: 0,
   skewAxis: 'x', // 'x' or 'y'
+  // copyPaste-specific
+  copiedPairIndex: -1,
+  pasteX: 0,
+  pasteY: 0,
 };
 
 function pickNextTarget() {
@@ -548,19 +696,20 @@ function startIdle() {
   cursorEl.className = '';
   hideTransformBox();
   hideFontDropdown();
+  hideContextMenu();
 }
 
 function startMoveToTarget() {
   cursor.targetPair = pickNextTarget();
   // Action type distribution:
-  // drag: 40% | transform(scale): 20% | rotate: 15% | fontChange: 10% | skew: 10% | extra drag: 5%
+  // drag: 43% | transform(scale): 20% | rotate: 15% | fontChange: 10% | skew: 10% | copyPaste: 2%
   const roll = Math.random();
-  if      (roll < 0.40) cursor.actionType = 'drag';
-  else if (roll < 0.60) cursor.actionType = 'transform';
-  else if (roll < 0.75) cursor.actionType = 'rotate';
-  else if (roll < 0.85) cursor.actionType = 'fontChange';
-  else if (roll < 0.95) cursor.actionType = 'skew';
-  else                   cursor.actionType = 'drag';
+  if      (roll < 0.43) cursor.actionType = 'drag';
+  else if (roll < 0.63) cursor.actionType = 'transform';
+  else if (roll < 0.78) cursor.actionType = 'rotate';
+  else if (roll < 0.88) cursor.actionType = 'fontChange';
+  else if (roll < 0.98) cursor.actionType = 'skew';
+  else                   cursor.actionType = 'copyPaste';
 
   let aimX, aimY;
   const center = getPairCenter(cursor.targetPair);
@@ -982,6 +1131,104 @@ function startFontDismiss() {
   cursorEl.className = '';
 }
 
+// --- COPY/PASTE PHASES ---
+
+function startCopyRightClick() {
+  cursor.phase = 'copyRightClick';
+  cursor.hoverTimer = randomRange(60, 130);
+  cursor.copiedPairIndex = cursor.targetPair;
+  cursorEl.className = '';
+}
+
+function startCopyMenuShow() {
+  cursor.phase = 'copyMenuShow';
+  cursor.hoverTimer = randomRange(200, 400);
+  showContextMenu(cursor.x + 2, cursor.y + 2);
+}
+
+function startCopyMoveToCopy() {
+  const copyItem = contextMenu.querySelector('[data-action="copy"]');
+  const rect = copyItem.getBoundingClientRect();
+  const aimX = rect.left + rect.width / 2 + randomRange(-10, 10);
+  const aimY = rect.top + rect.height / 2 + randomRange(-2, 2);
+  const dist = Math.sqrt((aimX - cursor.x) ** 2 + (aimY - cursor.y) ** 2);
+  cursor.path = generateMousePath(cursor.x, cursor.y, aimX, aimY, 30);
+  cursor.pathStartTime = performance.now();
+  cursor.pathDuration = getMoveDuration(dist) * 1.2;
+  cursor.phase = 'copyMoveToCopy';
+}
+
+function startCopyCopyClick() {
+  cursor.phase = 'copyCopyClick';
+  cursor.hoverTimer = randomRange(60, 120);
+  highlightMenuItem('copy');
+}
+
+function startCopyHideMenu() {
+  cursor.phase = 'copyHideMenu';
+  cursor.hoverTimer = randomRange(100, 250);
+  hideContextMenu();
+  cursorEl.className = '';
+  // Pick a paste destination — offset from the copied pair
+  const srcCenter = getPairCenter(cursor.copiedPairIndex);
+  const offsetDist = randomRange(30, 80);
+  const offsetAngle = Math.random() * Math.PI * 2;
+  cursor.pasteX = srcCenter.x + Math.cos(offsetAngle) * offsetDist;
+  cursor.pasteY = srcCenter.y + Math.sin(offsetAngle) * offsetDist;
+}
+
+function startCopyMoveToTarget() {
+  const aimX = cursor.pasteX + randomRange(-5, 5);
+  const aimY = cursor.pasteY + randomRange(-5, 5);
+  const dist = Math.sqrt((aimX - cursor.x) ** 2 + (aimY - cursor.y) ** 2);
+  cursor.path = generateMousePath(cursor.x, cursor.y, aimX, aimY, 50);
+  cursor.pathStartTime = performance.now();
+  cursor.pathDuration = getMoveDuration(dist);
+  cursor.phase = 'copyMoveToTarget';
+  cursorEl.className = '';
+}
+
+function startPasteRightClick() {
+  cursor.phase = 'pasteRightClick';
+  cursor.hoverTimer = randomRange(60, 130);
+}
+
+function startPasteMenuShow() {
+  cursor.phase = 'pasteMenuShow';
+  cursor.hoverTimer = randomRange(200, 400);
+  showContextMenu(cursor.x + 2, cursor.y + 2);
+}
+
+function startPasteMoveToPaste() {
+  const pasteItem = contextMenu.querySelector('[data-action="paste"]');
+  const rect = pasteItem.getBoundingClientRect();
+  const aimX = rect.left + rect.width / 2 + randomRange(-10, 10);
+  const aimY = rect.top + rect.height / 2 + randomRange(-2, 2);
+  const dist = Math.sqrt((aimX - cursor.x) ** 2 + (aimY - cursor.y) ** 2);
+  cursor.path = generateMousePath(cursor.x, cursor.y, aimX, aimY, 30);
+  cursor.pathStartTime = performance.now();
+  cursor.pathDuration = getMoveDuration(dist) * 1.2;
+  cursor.phase = 'pasteMoveToPaste';
+}
+
+function startPastePasteClick() {
+  cursor.phase = 'pastePasteClick';
+  cursor.hoverTimer = randomRange(80, 180);
+  highlightMenuItem('paste');
+  // Actually duplicate the pair
+  const srcCenter = getPairCenter(cursor.copiedPairIndex);
+  const offsetX = cursor.pasteX - srcCenter.x;
+  const offsetY = cursor.pasteY - srcCenter.y;
+  duplicatePair(cursor.copiedPairIndex, offsetX, offsetY);
+}
+
+function startPasteDismiss() {
+  cursor.phase = 'pasteDismiss';
+  cursor.hoverTimer = randomRange(100, 250);
+  hideContextMenu();
+  cursorEl.className = '';
+}
+
 // Recalc on resize (orientation change, etc.)
 window.addEventListener('resize', () => recalcAllNaturalDims());
 
@@ -1016,6 +1263,8 @@ function animate(now) {
           startMoveToSkewHandle();
         } else if (cursor.actionType === 'fontChange') {
           startFontClick();
+        } else if (cursor.actionType === 'copyPaste') {
+          startCopyRightClick();
         } else {
           startGrab();
         }
@@ -1210,6 +1459,80 @@ function animate(now) {
       cursor.hoverTimer -= dt;
       if (cursor.hoverTimer <= 0) startIdle();
       break;
+
+    // --- COPY/PASTE PATH ---
+    case 'copyRightClick':
+      cursor.hoverTimer -= dt;
+      if (cursor.hoverTimer <= 0) startCopyMenuShow();
+      break;
+
+    case 'copyMenuShow':
+      cursor.hoverTimer -= dt;
+      cursor.x += handTremor(now * 0.01, 31) * 0.08;
+      cursor.y += handTremor(now * 0.01, 67) * 0.08;
+      if (cursor.hoverTimer <= 0) startCopyMoveToCopy();
+      break;
+
+    case 'copyMoveToCopy': {
+      const t = followPath(cursor, now);
+      // Highlight nearest menu item
+      const cy = cursor.y;
+      contextMenu.querySelectorAll('.menu-item').forEach(el => {
+        const rect = el.getBoundingClientRect();
+        const inRange = cy >= rect.top && cy <= rect.bottom;
+        el.classList.toggle('hovered', inRange);
+      });
+      if (t >= 1) startCopyCopyClick();
+      break;
+    }
+
+    case 'copyCopyClick':
+      cursor.hoverTimer -= dt;
+      if (cursor.hoverTimer <= 0) startCopyHideMenu();
+      break;
+
+    case 'copyHideMenu':
+      cursor.hoverTimer -= dt;
+      if (cursor.hoverTimer <= 0) startCopyMoveToTarget();
+      break;
+
+    case 'copyMoveToTarget':
+      if (followPath(cursor, now) >= 1) startPasteRightClick();
+      break;
+
+    case 'pasteRightClick':
+      cursor.hoverTimer -= dt;
+      if (cursor.hoverTimer <= 0) startPasteMenuShow();
+      break;
+
+    case 'pasteMenuShow':
+      cursor.hoverTimer -= dt;
+      cursor.x += handTremor(now * 0.01, 47) * 0.08;
+      cursor.y += handTremor(now * 0.01, 83) * 0.08;
+      if (cursor.hoverTimer <= 0) startPasteMoveToPaste();
+      break;
+
+    case 'pasteMoveToPaste': {
+      const t = followPath(cursor, now);
+      const cy = cursor.y;
+      contextMenu.querySelectorAll('.menu-item').forEach(el => {
+        const rect = el.getBoundingClientRect();
+        const inRange = cy >= rect.top && cy <= rect.bottom;
+        el.classList.toggle('hovered', inRange);
+      });
+      if (t >= 1) startPastePasteClick();
+      break;
+    }
+
+    case 'pastePasteClick':
+      cursor.hoverTimer -= dt;
+      if (cursor.hoverTimer <= 0) startPasteDismiss();
+      break;
+
+    case 'pasteDismiss':
+      cursor.hoverTimer -= dt;
+      if (cursor.hoverTimer <= 0) startIdle();
+      break;
   }
 
   // --- RENDER ---
@@ -1324,12 +1647,12 @@ transformBox.querySelectorAll('.handle').forEach(handleEl => {
     user.dragging = true;
 
     const ps = pairState[user.selectedPair];
+    const box = getPairScreenBox(user.selectedPair);
 
     if (CORNER_HANDLES.includes(handleName)) {
-      // Scale
+      // Corner handle = scale both axes
       user.mode = 'scale';
       const anchorHandle = getAnchorHandle(handleName);
-      const box = getPairScreenBox(user.selectedPair);
       const anchorPos = getHandlePosition(box, anchorHandle);
       const handlePos = getHandlePosition(box, handleName);
       user.anchorX = anchorPos.x;
@@ -1339,11 +1662,36 @@ transformBox.querySelectorAll('.handle').forEach(handleEl => {
       user.startScaleX = ps.scaleX;
       user.startScaleY = ps.scaleY;
     } else {
-      // Edge handle = skew
-      user.mode = 'skew';
-      user.startSkewX = ps.skewX;
-      user.startSkewY = ps.skewY;
+      // Edge handle = scale on one axis
+      user.mode = 'edgeScale';
+      const anchorHandle = getAnchorHandle(handleName);
+      const anchorPos = getHandlePosition(box, anchorHandle);
+      const handlePos = getHandlePosition(box, handleName);
+      user.anchorX = anchorPos.x;
+      user.anchorY = anchorPos.y;
+      user.signX = Math.sign(handlePos.x - anchorPos.x) || 1;
+      user.signY = Math.sign(handlePos.y - anchorPos.y) || 1;
+      user.startScaleX = ps.scaleX;
+      user.startScaleY = ps.scaleY;
     }
+  });
+});
+
+// Handle mousedown on shear zones (edges between handles)
+transformBox.querySelectorAll('.shear-zone').forEach(zoneEl => {
+  zoneEl.addEventListener('mousedown', (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (user.selectedPair < 0) return;
+
+    const edge = zoneEl.dataset.edge;
+    user.dragging = true;
+    user.mode = 'skew';
+    user.handle = (edge === 'top' || edge === 'bottom') ? 'tc' : 'ml';
+    user.startX = e.clientX;
+    user.startY = e.clientY;
+    user.startSkewX = pairState[user.selectedPair].skewX;
+    user.startSkewY = pairState[user.selectedPair].skewY;
   });
 });
 
@@ -1381,7 +1729,24 @@ document.addEventListener('mousemove', (e) => {
       const rawSY = Math.abs(e.clientY - user.anchorY) / (2 * ps.naturalHH);
       ps.scaleX = clamp(rawSX, 0.15, 4.0);
       ps.scaleY = clamp(rawSY, 0.15, 4.0);
-      // Keep anchor pinned
+      const newCX = user.anchorX + user.signX * ps.naturalHW * ps.scaleX;
+      const newCY = user.anchorY + user.signY * ps.naturalHH * ps.scaleY;
+      ps.x = newCX - ps.baseCenterX;
+      ps.y = newCY - ps.baseCenterY;
+      break;
+    }
+    case 'edgeScale': {
+      // Scale on one axis only, keep the other fixed
+      const h = user.handle;
+      if (h === 'ml' || h === 'mr') {
+        // Horizontal edge → scale X only
+        const rawSX = Math.abs(e.clientX - user.anchorX) / (2 * ps.naturalHW);
+        ps.scaleX = clamp(rawSX, 0.15, 4.0);
+      } else {
+        // Vertical edge → scale Y only
+        const rawSY = Math.abs(e.clientY - user.anchorY) / (2 * ps.naturalHH);
+        ps.scaleY = clamp(rawSY, 0.15, 4.0);
+      }
       const newCX = user.anchorX + user.signX * ps.naturalHW * ps.scaleX;
       const newCY = user.anchorY + user.signY * ps.naturalHH * ps.scaleY;
       ps.x = newCX - ps.baseCenterX;
@@ -1423,16 +1788,76 @@ document.addEventListener('mousedown', (e) => {
     const target = e.target;
     const isInteractive = target.classList.contains('letter-pair') ||
                           target.classList.contains('handle') ||
-                          target.classList.contains('rotate-zone');
+                          target.classList.contains('rotate-zone') ||
+                          target.classList.contains('shear-zone') ||
+                          target.classList.contains('menu-item');
     if (!isInteractive) {
       userDeselectPair();
     }
   }
 });
 
-// Keep user's transform box in sync each frame
-const origAnimate = animate;
-// (already handled in the main render loop via updateTransformBoxPosition)
+// ==================== USER COPY/PASTE ====================
+
+// Right-click on letter pair → show context menu
+elements.forEach((el, i) => {
+  el.addEventListener('contextmenu', (e) => {
+    e.preventDefault();
+    userSelectPair(i);
+    clipboard.pairIndex = i;
+    showContextMenu(e.clientX, e.clientY);
+    contextMenu.style.pointerEvents = 'auto';
+  });
+});
+
+// Context menu item clicks
+contextMenu.querySelectorAll('.menu-item').forEach(item => {
+  item.addEventListener('mousedown', (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const action = item.dataset.action;
+    if (action === 'copy') {
+      // Already stored in clipboard.pairIndex on right-click
+      hideContextMenu();
+      contextMenu.style.pointerEvents = 'none';
+    } else if (action === 'paste') {
+      if (clipboard.pairIndex >= 0) {
+        // Paste at the menu position with a small offset
+        const menuRect = contextMenu.getBoundingClientRect();
+        const srcCenter = getPairCenter(clipboard.pairIndex);
+        const offsetX = menuRect.left - srcCenter.x + randomRange(10, 30);
+        const offsetY = menuRect.top - srcCenter.y + randomRange(10, 30);
+        duplicatePair(clipboard.pairIndex, offsetX, offsetY);
+      }
+      hideContextMenu();
+      contextMenu.style.pointerEvents = 'none';
+    }
+  });
+
+  item.addEventListener('mouseenter', () => {
+    contextMenu.querySelectorAll('.menu-item').forEach(el => el.classList.remove('hovered'));
+    item.classList.add('hovered');
+  });
+  item.addEventListener('mouseleave', () => {
+    item.classList.remove('hovered');
+  });
+});
+
+// Hide context menu on any click outside it
+document.addEventListener('mousedown', (e) => {
+  if (contextMenu.classList.contains('visible') && !contextMenu.contains(e.target)) {
+    hideContextMenu();
+    contextMenu.style.pointerEvents = 'none';
+  }
+});
+
+// Prevent default context menu on the page
+document.addEventListener('contextmenu', (e) => {
+  // Only prevent if clicking on a letter pair (allow default elsewhere)
+  if (e.target.classList.contains('letter-pair')) {
+    e.preventDefault();
+  }
+});
 </script>
 </body>
 </html>
