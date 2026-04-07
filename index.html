@@ -21,15 +21,6 @@
     cursor: none !important;
   }
 
-  /* Pixelation wrapper: scale down then back up with nearest-neighbor */
-  .pixel-wrapper {
-    image-rendering: pixelated;
-    image-rendering: -moz-crisp-edges;
-    image-rendering: crisp-edges;
-    -webkit-font-smoothing: none;
-    -moz-osx-font-smoothing: unset;
-  }
-
   .text-container {
     display: flex;
     align-items: flex-end;
@@ -46,24 +37,17 @@
     will-change: transform;
     letter-spacing: 0.02em;
     transform-origin: center center;
-    /* Kill anti-aliasing for jaggy edges */
-    -webkit-font-smoothing: none;
-    -moz-osx-font-smoothing: unset;
-    font-smooth: never;
   }
 
   .letter-pair.grabbed { color: #ffffff; }
-  /* Hide original text — pixelated canvas renders the visible version */
-  .letter-pair { color: transparent !important; }
 
-  /* --- Fake cursor (hidden, rendered to canvas instead) --- */
+  /* --- Fake cursor --- */
   #cursor {
     position: fixed;
     top: 0; left: 0;
     pointer-events: none;
     z-index: 9999;
     will-change: transform;
-    display: none !important;
   }
   #cursor svg { display: none; }
   #cursor .arrow   { display: block; }
@@ -112,18 +96,6 @@
   #cursor.rotate .arrow { display: none; }
   #cursor.rotate .rotate-icon { display: block; }
 
-  /* Pixelation canvas overlay */
-  #pixel-canvas {
-    position: fixed;
-    top: 0; left: 0;
-    width: 100vw;
-    height: 100vh;
-    image-rendering: pixelated;
-    image-rendering: -moz-crisp-edges;
-    pointer-events: none;
-    z-index: 5;
-  }
-
   /* --- Font dropdown --- */
   #font-dropdown {
     position: fixed;
@@ -158,7 +130,6 @@
 </head>
 <body>
 
-<canvas id="pixel-canvas"></canvas>
 <div class="text-container" id="container"></div>
 
 <!-- Font picker dropdown -->
@@ -1080,6 +1051,10 @@ function animate(now) {
   }
 
   // --- RENDER ---
+  cursorEl.style.transform = `translate(${cursor.x.toFixed(1)}px, ${cursor.y.toFixed(1)}px)`;
+  // Update cursor appearance class
+  updateCursorClass();
+
   elements.forEach((el, i) => {
     const ps = pairState[i];
     el.style.transform = `translate(${ps.x.toFixed(2)}px, ${ps.y.toFixed(2)}px) rotate(${ps.rotation.toFixed(4)}rad) scale(${ps.scaleX.toFixed(4)}, ${ps.scaleY.toFixed(4)})`;
@@ -1090,161 +1065,25 @@ function animate(now) {
     updateTransformBoxPosition(cursor.targetPair);
   }
 
-  // --- PIXELATION ---
-  renderPixelated();
-
   requestAnimationFrame(animate);
 }
 
-// Pixelation: render everything to a single low-res canvas.
-// CSS upscales it with image-rendering: pixelated. No intermediate
-// canvas = no chance for the browser to sneak in filtering.
-const pixelCanvas = document.getElementById('pixel-canvas');
-const pixCtx = pixelCanvas.getContext('2d', { alpha: true });
-const RENDER_SCALE = 0.55; // render at this fraction of screen res
-
-function setupPixelCanvas() {
-  pixelCanvas.width = Math.floor(window.innerWidth * RENDER_SCALE);
-  pixelCanvas.height = Math.floor(window.innerHeight * RENDER_SCALE);
-  pixelCanvas.style.width = window.innerWidth + 'px';
-  pixelCanvas.style.height = window.innerHeight + 'px';
-  pixCtx.imageSmoothingEnabled = false;
-}
-setupPixelCanvas();
-window.addEventListener('resize', setupPixelCanvas);
-
-// Determine which cursor to draw based on phase/class
-function getCursorType() {
+// Update the DOM cursor class based on current phase
+function updateCursorClass() {
   const phase = cursor.phase;
   const action = cursor.actionType;
-  if (phase === 'grab' || phase === 'drag') return 'grabbing';
-  if (phase === 'hover' && action === 'fontChange') return 'ibeam';
-  if (phase === 'hover' || phase === 'release') return 'grab';
+  if (phase === 'grab' || phase === 'drag') { cursorEl.className = 'grabbing'; return; }
+  if (phase === 'hover' && action === 'fontChange') { cursorEl.className = 'text-cursor'; return; }
+  if (phase === 'hover' || phase === 'release') { cursorEl.className = 'grab'; return; }
   if (phase === 'rotateHover' || phase === 'rotateGrab' ||
-      phase === 'rotateDrag' || phase === 'rotateRelease') return 'rotate';
+      phase === 'rotateDrag' || phase === 'rotateRelease') { cursorEl.className = 'rotate'; return; }
   if (phase === 'handleHover' || phase === 'transformGrab' ||
       phase === 'transformDrag' || phase === 'transformRelease') {
     const h = cursor.selectedHandle;
-    return (h === 'tl' || h === 'br') ? 'nwse' : 'nesw';
+    cursorEl.className = (h === 'tl' || h === 'br') ? 'nwse' : 'nesw';
+    return;
   }
-  return 'arrow';
-}
-
-function drawCursor(ctx, x, y, type) {
-  ctx.save();
-  ctx.translate(x, y);
-
-  ctx.fillStyle = '#fff';
-  ctx.strokeStyle = '#000';
-  ctx.lineWidth = 1.5 / RENDER_SCALE;
-
-  switch (type) {
-    case 'arrow':
-      ctx.beginPath();
-      ctx.moveTo(0, 0);
-      ctx.lineTo(18, 11);
-      ctx.lineTo(9, 12.5);
-      ctx.lineTo(4, 22);
-      ctx.closePath();
-      ctx.fill();
-      ctx.stroke();
-      break;
-
-    case 'grab':
-      // Open hand — simplified
-      ctx.fillRect(2, 10, 16, 12);
-      ctx.fillRect(3, 2, 4, 12);
-      ctx.fillRect(8, 0, 4, 14);
-      ctx.fillRect(13, 2, 4, 12);
-      ctx.fillRect(18, 5, 4, 9);
-      break;
-
-    case 'grabbing':
-      // Closed hand — simplified
-      ctx.fillRect(2, 10, 16, 14);
-      ctx.fillRect(3, 6, 4, 8);
-      ctx.fillRect(8, 5, 4, 9);
-      ctx.fillRect(13, 6, 4, 8);
-      ctx.fillRect(18, 7, 4, 7);
-      break;
-
-    case 'ibeam':
-      ctx.lineWidth = 2.5 / RENDER_SCALE;
-      ctx.strokeStyle = '#fff';
-      ctx.beginPath();
-      ctx.moveTo(6, 0); ctx.lineTo(18, 0);
-      ctx.moveTo(12, 0); ctx.lineTo(12, 24);
-      ctx.moveTo(6, 24); ctx.lineTo(18, 24);
-      ctx.stroke();
-      break;
-
-    case 'rotate':
-      ctx.lineWidth = 2.5 / RENDER_SCALE;
-      ctx.strokeStyle = '#fff';
-      ctx.beginPath();
-      ctx.arc(12, 12, 9, -0.5, Math.PI * 1.5, false);
-      ctx.stroke();
-      // Arrow tip
-      ctx.beginPath();
-      ctx.moveTo(3, 6); ctx.lineTo(3, 0); ctx.lineTo(9, 0);
-      ctx.stroke();
-      break;
-
-    case 'nwse':
-      ctx.lineWidth = 2.5 / RENDER_SCALE;
-      ctx.strokeStyle = '#fff';
-      ctx.beginPath();
-      ctx.moveTo(2, 2); ctx.lineTo(20, 20);
-      ctx.moveTo(2, 9); ctx.lineTo(2, 2); ctx.lineTo(9, 2);
-      ctx.moveTo(20, 13); ctx.lineTo(20, 20); ctx.lineTo(13, 20);
-      ctx.stroke();
-      break;
-
-    case 'nesw':
-      ctx.lineWidth = 2.5 / RENDER_SCALE;
-      ctx.strokeStyle = '#fff';
-      ctx.beginPath();
-      ctx.moveTo(20, 2); ctx.lineTo(2, 20);
-      ctx.moveTo(13, 2); ctx.lineTo(20, 2); ctx.lineTo(20, 9);
-      ctx.moveTo(9, 20); ctx.lineTo(2, 20); ctx.lineTo(2, 13);
-      ctx.stroke();
-      break;
-  }
-
-  ctx.restore();
-}
-
-function renderPixelated() {
-  const w = pixelCanvas.width;
-  const h = pixelCanvas.height;
-  pixCtx.clearRect(0, 0, w, h);
-  pixCtx.save();
-  pixCtx.scale(RENDER_SCALE, RENDER_SCALE);
-
-  // Draw text
-  elements.forEach((el, i) => {
-    const ps = pairState[i];
-    const cx = ps.baseCenterX + ps.x;
-    const cy = ps.baseCenterY + ps.y;
-
-    pixCtx.save();
-    pixCtx.translate(cx, cy);
-    pixCtx.rotate(ps.rotation);
-    pixCtx.scale(ps.scaleX, ps.scaleY);
-
-    pixCtx.font = `700 ${getComputedStyle(el).fontSize} ${pairFonts[i]}`;
-    pixCtx.fillStyle = '#e0e0e0';
-    pixCtx.textAlign = 'center';
-    pixCtx.textBaseline = 'middle';
-    pixCtx.fillText(el.textContent, 0, 0);
-    pixCtx.restore();
-  });
-
-  // Draw cursor
-  const cursorType = getCursorType();
-  drawCursor(pixCtx, cursor.x, cursor.y, cursorType);
-
-  pixCtx.restore();
+  cursorEl.className = '';
 }
 
 requestAnimationFrame(animate);
