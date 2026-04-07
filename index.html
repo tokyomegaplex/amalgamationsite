@@ -1100,7 +1100,7 @@ function animate(now) {
 // Pixelation: render the DOM text into a low-res canvas, display upscaled
 const pixelCanvas = document.getElementById('pixel-canvas');
 const pixCtx = pixelCanvas.getContext('2d');
-const PIXEL_SCALE = 0.25; // render at 25% res = ~4x pixel size
+const PIXEL_SCALE = 0.5; // render at 50% res = ~2x pixel size
 
 function setupPixelCanvas() {
   pixelCanvas.width = Math.floor(window.innerWidth * PIXEL_SCALE);
