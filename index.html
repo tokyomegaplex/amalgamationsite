@@ -19,6 +19,7 @@
     min-height: 100vh;
     overflow: hidden;
     font-family: 'Courier New', Courier, monospace;
+    cursor: none;
   }
 
   .text-container {
@@ -35,25 +36,89 @@
     display: inline-block;
     will-change: transform;
     letter-spacing: 0.02em;
-    transition: none;
   }
+
+  .letter-pair.grabbed {
+    color: #ffffff;
+  }
+
+  #cursor {
+    position: fixed;
+    top: 0;
+    left: 0;
+    pointer-events: none;
+    z-index: 9999;
+    will-change: transform;
+    /* Default arrow cursor via SVG */
+  }
+
+  #cursor .arrow {
+    display: block;
+  }
+  #cursor .grab {
+    display: none;
+  }
+  #cursor .grabbing {
+    display: none;
+  }
+
+  #cursor.grab .arrow { display: none; }
+  #cursor.grab .grab { display: block; }
+  #cursor.grab .grabbing { display: none; }
+
+  #cursor.grabbing .arrow { display: none; }
+  #cursor.grabbing .grab { display: none; }
+  #cursor.grabbing .grabbing { display: block; }
 </style>
 </head>
 <body>
 
 <div class="text-container" id="container"></div>
 
+<!-- Fake cursor element -->
+<div id="cursor">
+  <!-- Arrow (default) -->
+  <svg class="arrow" width="24" height="24" viewBox="0 0 24 24" fill="none">
+    <path d="M5 3l14 9-7 1.5L8 21z" fill="#fff" stroke="#000" stroke-width="1"/>
+  </svg>
+  <!-- Open hand (hover/grab ready) -->
+  <svg class="grab" width="28" height="28" viewBox="0 0 28 28" fill="none">
+    <g fill="#fff" stroke="#000" stroke-width="0.8">
+      <!-- palm -->
+      <rect x="7" y="14" width="14" height="10" rx="4"/>
+      <!-- fingers -->
+      <rect x="8"  y="6"  width="3" height="10" rx="1.5"/>
+      <rect x="12" y="4"  width="3" height="12" rx="1.5"/>
+      <rect x="16" y="6"  width="3" height="10" rx="1.5"/>
+      <rect x="20" y="9"  width="3" height="8"  rx="1.5"/>
+    </g>
+  </svg>
+  <!-- Closed hand (grabbing/dragging) -->
+  <svg class="grabbing" width="28" height="28" viewBox="0 0 28 28" fill="none">
+    <g fill="#fff" stroke="#000" stroke-width="0.8">
+      <!-- palm -->
+      <rect x="7" y="12" width="14" height="12" rx="4"/>
+      <!-- curled fingers -->
+      <rect x="8"  y="9"  width="3" height="6" rx="1.5"/>
+      <rect x="12" y="8"  width="3" height="7" rx="1.5"/>
+      <rect x="16" y="9"  width="3" height="6" rx="1.5"/>
+      <rect x="20" y="10" width="3" height="5" rx="1.5"/>
+    </g>
+  </svg>
+</div>
+
 <script>
 const word = "Amalgamation";
-const pairs = [];
+const pairStrings = [];
 for (let i = 0; i < word.length; i += 2) {
-  pairs.push(word.slice(i, i + 2));
+  pairStrings.push(word.slice(i, i + 2));
 }
 
 const container = document.getElementById("container");
+const cursorEl = document.getElementById("cursor");
 const elements = [];
 
-pairs.forEach((pair) => {
+pairStrings.forEach((pair) => {
   const span = document.createElement("span");
   span.className = "letter-pair";
   span.textContent = pair;
@@ -61,97 +126,301 @@ pairs.forEach((pair) => {
   elements.push(span);
 });
 
-// Each pair has its own motion state
-const states = elements.map(() => ({
-  x: 0,
-  y: 0,
-  // current movement vector
-  vx: 0,
-  vy: 0,
-  // phase: 'moving' or 'paused'
-  phase: 'paused',
-  // time remaining in current phase (in ms)
-  phaseTimer: 0,
-  // speed multiplier for this drag gesture
-  speed: 0,
-  // accumulated noise offset
-  noisePhase: Math.random() * 1000,
-}));
+// --- Realistic mouse movement via sampled bezier paths ---
+
+//102-parameter Fitts's law style mouse model:
+// Real mice accelerate fast, cruise, then decelerate with slight overshoot.
+// We pre-compute a path of waypoints, then replay them with realistic timing.
 
 function randomRange(min, max) {
   return min + Math.random() * (max - min);
 }
 
-function pickNewDrag(state) {
-  // Pick a random direction with a random speed
-  const angle = Math.random() * Math.PI * 2;
-  state.speed = randomRange(0.3, 1.2);
-  state.vx = Math.cos(angle) * state.speed;
-  state.vy = Math.sin(angle) * state.speed;
-  state.phase = 'moving';
-  state.phaseTimer = randomRange(400, 1800);
+function lerp(a, b, t) {
+  return a + (b - a) * t;
 }
 
-function startPause(state) {
-  state.phase = 'paused';
-  state.vx = 0;
-  state.vy = 0;
-  state.phaseTimer = randomRange(300, 1500);
+// Attempt to mimic real mouse acceleration curves:
+// fast ramp up, sustained middle, ease-out with possible micro-overshoot
+function mouseEase(t) {
+  // modified ease with slight overshoot at the end
+  if (t < 0.15) {
+    // accelerate (quadratic in)
+    const s = t / 0.15;
+    return 0.15 * s * s;
+  } else if (t < 0.7) {
+    // cruise (mostly linear)
+    return 0.15 + (t - 0.15) * (0.75 / 0.55);
+  } else {
+    // decelerate with slight overshoot
+    const s = (t - 0.7) / 0.3;
+    // cubic ease-out with a tiny bump past 1.0
+    const overshoot = 1.02;
+    const val = 0.9 + 0.1 * (1 - Math.pow(1 - s, 3)) * overshoot;
+    return Math.min(val, 1.005);
+  }
 }
 
-// Simple noise function using sin combinations
-function noise(t) {
-  return Math.sin(t * 1.7) * 0.5
-       + Math.sin(t * 3.1 + 1.3) * 0.3
-       + Math.sin(t * 5.9 + 2.7) * 0.2;
+// Generate micro-jitter that looks like hand tremor on a mouse
+function handTremor(t, seed) {
+  return Math.sin(t * 47.3 + seed) * 0.3
+       + Math.sin(t * 91.7 + seed * 2.3) * 0.15
+       + Math.sin(t * 23.1 + seed * 0.7) * 0.2;
 }
 
-// Max displacement from origin before biasing back
-const MAX_DRIFT = 60;
+// Generate a curved path between two points with slight arc + jitter
+function generateMousePath(x0, y0, x1, y1, numPoints) {
+  const points = [];
+  // Random slight curve offset (perpendicular to the line)
+  const dx = x1 - x0;
+  const dy = y1 - y0;
+  const dist = Math.sqrt(dx * dx + dy * dy);
+  // perpendicular
+  const px = -dy / (dist || 1);
+  const py = dx / (dist || 1);
+  // slight arc: real mouse paths aren't perfectly straight
+  const arcAmount = randomRange(-dist * 0.08, dist * 0.08);
+  const seed = Math.random() * 1000;
 
-// Stagger the initial start so pairs don't all begin in sync
-states.forEach((state, i) => {
-  state.phaseTimer = randomRange(100, 800) + i * 200;
-  state.phase = 'paused';
-});
+  for (let i = 0; i <= numPoints; i++) {
+    const t = i / numPoints;
+    const eased = mouseEase(t);
+    // base position along line
+    let x = lerp(x0, x1, eased);
+    let y = lerp(y0, y1, eased);
+    // add arc (peaks at middle)
+    const arcT = Math.sin(t * Math.PI);
+    x += px * arcAmount * arcT;
+    y += py * arcAmount * arcT;
+    // add hand tremor (small, high frequency)
+    x += handTremor(t * 10, seed) * 0.6;
+    y += handTremor(t * 10, seed + 500) * 0.6;
+    points.push({ x, y });
+  }
+  return points;
+}
+
+// Timing: real mouse moves fast over distance, with variable speed
+function getMoveDuration(dist) {
+  // Fitts's law inspired: longer distance = more time, but not linear
+  return 200 + Math.sqrt(dist) * 25 + randomRange(0, 150);
+}
+
+function getDragDuration(dist) {
+  // Dragging is slower than free movement
+  return 300 + Math.sqrt(dist) * 35 + randomRange(0, 200);
+}
+
+// --- State machine for the cursor ---
+// Phases: idle -> moveToTarget -> hover -> grab -> drag -> release -> idle
+
+const pairOffsets = elements.map(() => ({ x: 0, y: 0 }));
+
+const cursor = {
+  x: window.innerWidth / 2,
+  y: window.innerHeight / 2 - 100,
+  targetPair: -1,
+  phase: 'idle',
+  path: [],
+  pathIndex: 0,
+  pathStartTime: 0,
+  pathDuration: 0,
+  dragStartPairX: 0,
+  dragStartPairY: 0,
+  dragStartCursorX: 0,
+  dragStartCursorY: 0,
+  idleTimer: 0,
+  hoverTimer: 0,
+};
+
+function getPairCenter(i) {
+  const rect = elements[i].getBoundingClientRect();
+  return {
+    x: rect.left + rect.width / 2 + pairOffsets[i].x * 0,
+    y: rect.top + rect.height / 2 + pairOffsets[i].y * 0,
+  };
+}
+
+function pickNextTarget() {
+  // Pick a random pair, avoid the same one twice in a row sometimes
+  let next;
+  do {
+    next = Math.floor(Math.random() * elements.length);
+  } while (next === cursor.targetPair && Math.random() > 0.3);
+  return next;
+}
+
+function startMoveToTarget() {
+  cursor.targetPair = pickNextTarget();
+  const center = getPairCenter(cursor.targetPair);
+  // Aim slightly offset from center (like a real user clicking near text)
+  const aimX = center.x + randomRange(-10, 10);
+  const aimY = center.y + randomRange(-8, 8);
+  const dist = Math.sqrt((aimX - cursor.x) ** 2 + (aimY - cursor.y) ** 2);
+  cursor.path = generateMousePath(cursor.x, cursor.y, aimX, aimY, 60);
+  cursor.pathIndex = 0;
+  cursor.pathStartTime = performance.now();
+  cursor.pathDuration = getMoveDuration(dist);
+  cursor.phase = 'moveToTarget';
+  cursorEl.className = '';
+}
+
+function startHover() {
+  cursor.phase = 'hover';
+  cursor.hoverTimer = randomRange(150, 500);
+  cursorEl.className = 'grab';
+}
+
+function startGrab() {
+  cursor.phase = 'grab';
+  cursor.hoverTimer = randomRange(50, 150);
+  cursorEl.className = 'grabbing';
+  elements[cursor.targetPair].classList.add('grabbed');
+  cursor.dragStartPairX = pairOffsets[cursor.targetPair].x;
+  cursor.dragStartPairY = pairOffsets[cursor.targetPair].y;
+  cursor.dragStartCursorX = cursor.x;
+  cursor.dragStartCursorY = cursor.y;
+}
+
+function startDrag() {
+  // Pick a drag destination: move the pair some distance in a random direction
+  const dragDist = randomRange(20, 80);
+  const dragAngle = Math.random() * Math.PI * 2;
+
+  // Bias toward keeping pairs somewhat close to origin
+  const currentX = pairOffsets[cursor.targetPair].x;
+  const currentY = pairOffsets[cursor.targetPair].y;
+  const distFromOrigin = Math.sqrt(currentX ** 2 + currentY ** 2);
+  let biasAngle = dragAngle;
+  if (distFromOrigin > 30) {
+    // Bias back toward origin
+    const toOrigin = Math.atan2(-currentY, -currentX);
+    biasAngle = lerp(dragAngle, toOrigin, 0.4 + Math.random() * 0.3);
+  }
+
+  const destX = cursor.x + Math.cos(biasAngle) * dragDist;
+  const destY = cursor.y + Math.sin(biasAngle) * dragDist;
+  const dist = Math.sqrt((destX - cursor.x) ** 2 + (destY - cursor.y) ** 2);
+
+  // Sometimes do a multi-segment drag (change direction mid-drag)
+  if (Math.random() < 0.35) {
+    // Two-part drag: go one way then adjust
+    const midX = cursor.x + Math.cos(biasAngle) * dragDist * 0.5 + randomRange(-15, 15);
+    const midY = cursor.y + Math.sin(biasAngle) * dragDist * 0.5 + randomRange(-15, 15);
+    const path1 = generateMousePath(cursor.x, cursor.y, midX, midY, 30);
+    const path2 = generateMousePath(midX, midY, destX, destY, 30);
+    cursor.path = path1.concat(path2.slice(1));
+  } else {
+    cursor.path = generateMousePath(cursor.x, cursor.y, destX, destY, 60);
+  }
+
+  cursor.pathIndex = 0;
+  cursor.pathStartTime = performance.now();
+  cursor.pathDuration = getDragDuration(dist);
+  cursor.phase = 'drag';
+  cursor.dragStartCursorX = cursor.x;
+  cursor.dragStartCursorY = cursor.y;
+  cursor.dragStartPairX = pairOffsets[cursor.targetPair].x;
+  cursor.dragStartPairY = pairOffsets[cursor.targetPair].y;
+}
+
+function startRelease() {
+  cursor.phase = 'release';
+  cursor.hoverTimer = randomRange(100, 400);
+  cursorEl.className = 'grab';
+  elements[cursor.targetPair].classList.remove('grabbed');
+}
+
+function startIdle() {
+  cursor.phase = 'idle';
+  cursor.idleTimer = randomRange(200, 800);
+  cursorEl.className = '';
+}
+
+// Follow path and return progress 0-1
+function followPath(now) {
+  const elapsed = now - cursor.pathStartTime;
+  const t = Math.min(elapsed / cursor.pathDuration, 1);
+  const idx = Math.min(Math.floor(t * (cursor.path.length - 1)), cursor.path.length - 1);
+  const point = cursor.path[idx];
+  cursor.x = point.x;
+  cursor.y = point.y;
+  return t;
+}
 
 let lastTime = performance.now();
 
+// Start the loop
+startIdle();
+
 function animate(now) {
-  const dt = Math.min(now - lastTime, 50); // cap delta
+  const dt = Math.min(now - lastTime, 50);
   lastTime = now;
 
-  states.forEach((state, i) => {
-    state.phaseTimer -= dt;
-    state.noisePhase += dt * 0.003;
-
-    if (state.phaseTimer <= 0) {
-      if (state.phase === 'paused') {
-        pickNewDrag(state);
-      } else {
-        startPause(state);
+  switch (cursor.phase) {
+    case 'idle':
+      cursor.idleTimer -= dt;
+      if (cursor.idleTimer <= 0) {
+        startMoveToTarget();
       }
+      break;
+
+    case 'moveToTarget': {
+      const t = followPath(now);
+      if (t >= 1) {
+        startHover();
+      }
+      break;
     }
 
-    if (state.phase === 'moving') {
-      // Add subtle noise perpendicular to the movement direction
-      const nx = noise(state.noisePhase) * 0.15;
-      const ny = noise(state.noisePhase + 50) * 0.15;
-
-      state.x += (state.vx + nx) * dt * 0.06;
-      state.y += (state.vy + ny) * dt * 0.06;
-
-      // Soft bias back toward origin to prevent drifting too far
-      const dist = Math.sqrt(state.x * state.x + state.y * state.y);
-      if (dist > MAX_DRIFT) {
-        const pull = (dist - MAX_DRIFT) * 0.002 * dt;
-        const pullAngle = Math.atan2(-state.y, -state.x);
-        state.x += Math.cos(pullAngle) * pull;
-        state.y += Math.sin(pullAngle) * pull;
+    case 'hover':
+      cursor.hoverTimer -= dt;
+      // slight idle jitter while hovering
+      cursor.x += handTremor(now * 0.01, 42) * 0.08;
+      cursor.y += handTremor(now * 0.01, 99) * 0.08;
+      if (cursor.hoverTimer <= 0) {
+        startGrab();
       }
+      break;
+
+    case 'grab':
+      cursor.hoverTimer -= dt;
+      if (cursor.hoverTimer <= 0) {
+        startDrag();
+      }
+      break;
+
+    case 'drag': {
+      const prevX = cursor.x;
+      const prevY = cursor.y;
+      const t = followPath(now);
+      // Move the pair by the same delta as the cursor
+      const cdx = cursor.x - cursor.dragStartCursorX;
+      const cdy = cursor.y - cursor.dragStartCursorY;
+      pairOffsets[cursor.targetPair].x = cursor.dragStartPairX + cdx;
+      pairOffsets[cursor.targetPair].y = cursor.dragStartPairY + cdy;
+      if (t >= 1) {
+        startRelease();
+      }
+      break;
     }
 
-    elements[i].style.transform = `translate(${state.x.toFixed(2)}px, ${state.y.toFixed(2)}px)`;
+    case 'release':
+      cursor.hoverTimer -= dt;
+      cursor.x += handTremor(now * 0.01, 77) * 0.05;
+      cursor.y += handTremor(now * 0.01, 33) * 0.05;
+      if (cursor.hoverTimer <= 0) {
+        startIdle();
+      }
+      break;
+  }
+
+  // Update cursor position
+  cursorEl.style.transform = `translate(${cursor.x.toFixed(1)}px, ${cursor.y.toFixed(1)}px)`;
+
+  // Update pair positions
+  elements.forEach((el, i) => {
+    el.style.transform = `translate(${pairOffsets[i].x.toFixed(2)}px, ${pairOffsets[i].y.toFixed(2)}px)`;
   });
 
   requestAnimationFrame(animate);
