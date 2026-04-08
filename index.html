@@ -141,6 +141,14 @@
     background: #3a6abf;
     color: #fff;
   }
+  #context-menu .menu-item .check {
+    display: inline-block;
+    width: 14px;
+    color: #ccc;
+  }
+  #context-menu .menu-item.checked .check::before {
+    content: "\2713";
+  }
   #context-menu .menu-separator {
     height: 1px;
     background: #444;
@@ -222,9 +230,12 @@
 
 <!-- Context menu for copy/paste -->
 <div id="context-menu">
-  <div class="menu-item" data-action="copy">Copy</div>
+  <div class="menu-item" data-action="copy"><span class="check"></span>Copy</div>
   <div class="menu-separator"></div>
-  <div class="menu-item" data-action="paste">Paste</div>
+  <div class="menu-item" data-action="paste"><span class="check"></span>Paste</div>
+  <div class="menu-separator"></div>
+  <div class="menu-item" data-action="bold"><span class="check"></span>Bold</div>
+  <div class="menu-item" data-action="italic"><span class="check"></span>Italic</div>
 </div>
 
 <!-- Fake cursor element -->
@@ -338,6 +349,8 @@ const pairState = elements.map((el) => {
     scaleX: 1, scaleY: 1,
     rotation: 0, // radians
     skewX: 0, skewY: 0, // radians
+    bold: false,
+    italic: false,
     naturalHW: r.width / 2,
     naturalHH: r.height / 2,
     baseCenterX: r.left + r.width / 2,
@@ -564,6 +577,24 @@ function highlightMenuItem(actionName) {
   });
 }
 
+function applyTextStyle(i) {
+  const ps = pairState[i];
+  const el = elements[i];
+  el.style.fontWeight = ps.bold ? '900' : '';
+  el.style.fontStyle = ps.italic ? 'italic' : '';
+  // Bold/italic changes text metrics → flex layout shifts → recalc all pairs
+  recalcAllNaturalDims();
+}
+
+function syncContextMenuChecks(pairIndex) {
+  const ps = pairIndex >= 0 ? pairState[pairIndex] : null;
+  contextMenu.querySelectorAll('.menu-item').forEach(el => {
+    const a = el.dataset.action;
+    if (a === 'bold')        el.classList.toggle('checked', !!(ps && ps.bold));
+    else if (a === 'italic') el.classList.toggle('checked', !!(ps && ps.italic));
+  });
+}
+
 function duplicatePair(srcIndex, offsetX, offsetY) {
   // Create a visual copy of the source pair at an offset position
   const srcEl = elements[srcIndex];
@@ -572,6 +603,8 @@ function duplicatePair(srcIndex, offsetX, offsetY) {
   span.className = 'letter-pair';
   span.textContent = srcEl.textContent;
   span.style.fontFamily = pairFonts[srcIndex];
+  if (srcPs.bold) span.style.fontWeight = '900';
+  if (srcPs.italic) span.style.fontStyle = 'italic';
   container.appendChild(span);
 
   // Measure the new element's natural position
@@ -585,6 +618,8 @@ function duplicatePair(srcIndex, offsetX, offsetY) {
     scaleX: srcPs.scaleX, scaleY: srcPs.scaleY,
     rotation: srcPs.rotation,
     skewX: srcPs.skewX, skewY: srcPs.skewY,
+    bold: srcPs.bold,
+    italic: srcPs.italic,
     naturalHW: r.width / 2,
     naturalHH: r.height / 2,
     baseCenterX: r.left + r.width / 2,
@@ -634,6 +669,7 @@ function duplicatePair(srcIndex, offsetX, offsetY) {
       mi.style.opacity = '1';
       mi.style.pointerEvents = 'auto';
     });
+    syncContextMenuChecks(newIndex);
   });
 
   return newIndex;
@@ -1833,6 +1869,7 @@ elements.forEach((el, i) => {
       mi.style.opacity = '1';
       mi.style.pointerEvents = 'auto';
     });
+    syncContextMenuChecks(i);
   });
 });
 
@@ -1854,6 +1891,15 @@ contextMenu.querySelectorAll('.menu-item').forEach(item => {
         const offsetX = menuRect.left - srcCenter.x;
         const offsetY = menuRect.top - srcCenter.y;
         duplicatePair(clipboard.pairIndex, offsetX, offsetY);
+      }
+      hideContextMenu();
+      contextMenu.style.pointerEvents = 'none';
+    } else if (action === 'bold' || action === 'italic') {
+      const target = user.selectedPair >= 0 ? user.selectedPair : clipboard.pairIndex;
+      if (target >= 0) {
+        pairState[target][action] = !pairState[target][action];
+        applyTextStyle(target);
+        resetUserInactivityTimer();
       }
       hideContextMenu();
       contextMenu.style.pointerEvents = 'none';
@@ -1892,16 +1938,17 @@ document.addEventListener('contextmenu', (e) => {
     e.preventDefault();
     showContextMenu(e.clientX, e.clientY);
     contextMenu.style.pointerEvents = 'auto';
-    // Grey out Copy since nothing is targeted, highlight Paste availability
+    // Grey out everything except Paste — no pair is targeted
     contextMenu.querySelectorAll('.menu-item').forEach(el => {
-      if (el.dataset.action === 'copy') {
-        el.style.opacity = '0.4';
-        el.style.pointerEvents = 'none';
-      } else {
+      if (el.dataset.action === 'paste') {
         el.style.opacity = '1';
         el.style.pointerEvents = 'auto';
+      } else {
+        el.style.opacity = '0.4';
+        el.style.pointerEvents = 'none';
       }
     });
+    syncContextMenuChecks(-1);
   }
 });
 </script>
