@@ -336,6 +336,7 @@ pairStrings.forEach((pair) => {
   const span = document.createElement("span");
   span.className = "letter-pair";
   span.textContent = pair;
+  span.dataset.fontName = 'Courier New';
   container.appendChild(span);
   elements.push(span);
 });
@@ -507,7 +508,33 @@ const FONTS = [
   { name: 'Orbitron',          css: "'Orbitron', sans-serif" },
   { name: 'Pacifico',          css: "'Pacifico', cursive" },
   { name: 'Rubik Mono One',    css: "'Rubik Mono One', monospace" },
+  {
+    name: '3D Shaded',
+    css: "'Rubik Mono One', monospace",
+    shadow:
+      "1px 1px 0 #c0c0c0," +
+      "2px 2px 0 #a0a0a0," +
+      "3px 3px 0 #808080," +
+      "4px 4px 0 #606060," +
+      "5px 5px 0 #404040," +
+      "6px 6px 0 #202020," +
+      "7px 7px 8px rgba(0,0,0,0.8)"
+  },
 ];
+
+// Apply a font entry (family + optional text-shadow like 3D) to a pair.
+// We identify by name because "3D Shaded" shares its css family with "Rubik Mono One".
+function setPairFontEntry(i, entry) {
+  elements[i].style.fontFamily = entry.css;
+  elements[i].style.textShadow = entry.shadow || '';
+  pairFonts[i] = entry.css;
+  elements[i].dataset.fontName = entry.name;
+}
+
+function getPairFontEntry(i) {
+  const name = elements[i].dataset.fontName;
+  return FONTS.find(f => f.name === name) || FONTS.find(f => f.css === pairFonts[i]) || FONTS[0];
+}
 
 const fontDropdown = document.getElementById("font-dropdown");
 let fontOptionEls = [];
@@ -602,7 +629,11 @@ function duplicatePair(srcIndex, offsetX, offsetY) {
   const span = document.createElement('span');
   span.className = 'letter-pair';
   span.textContent = srcEl.textContent;
-  span.style.fontFamily = pairFonts[srcIndex];
+  // Copy font entry (carries font-family AND any text-shadow like 3D)
+  const srcFontEntry = getPairFontEntry(srcIndex);
+  span.style.fontFamily = srcFontEntry.css;
+  if (srcFontEntry.shadow) span.style.textShadow = srcFontEntry.shadow;
+  span.dataset.fontName = srcFontEntry.name;
   if (srcPs.bold) span.style.fontWeight = '900';
   if (srcPs.italic) span.style.fontStyle = 'italic';
   container.appendChild(span);
@@ -1102,7 +1133,7 @@ function startFontDropdownShow() {
   cursor.hoverTimer = randomRange(150, 350);
   cursorEl.className = '';
   // Build and show the dropdown near the cursor
-  const currentFontName = FONTS.find(f => f.css === pairFonts[cursor.targetPair])?.name || '';
+  const currentFontName = getPairFontEntry(cursor.targetPair).name;
   buildDropdownOptions(currentFontName);
   showFontDropdown(cursor.x + 8, cursor.y + 8);
 }
@@ -1156,11 +1187,10 @@ function recalcAllNaturalDims() {
 function startFontOptionClick() {
   cursor.phase = 'fontOptionClick';
   cursor.hoverTimer = randomRange(80, 180);
-  // Apply the font
+  // Apply the font (using the entry so 3D shadow is carried along)
   const optionEl = fontOptionEls[cursor.selectedFontIndex];
-  const newFontCss = optionEl.dataset.fontCss;
-  pairFonts[cursor.targetPair] = newFontCss;
-  elements[cursor.targetPair].style.fontFamily = newFontCss;
+  const entry = FONTS.find(f => f.name === optionEl.dataset.fontName) || FONTS[0];
+  setPairFontEntry(cursor.targetPair, entry);
   // Recalculate ALL pairs — font change shifts flex layout for everyone
   recalcAllNaturalDims();
 }
